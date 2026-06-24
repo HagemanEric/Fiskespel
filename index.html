@@ -186,8 +186,8 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
-window.addEventListener('load',()=>{
-const $=s=>document.getElementById(s);
+window.addEventListener('load', () => {
+const getEl = id => document.getElementById(id);
 
 /* ===== HAPTIK ===== artspecifik vibration + iOS-fallback (skärmskak) */
 const HAPTIK_OK=('vibrate' in navigator)&&typeof navigator.vibrate==='function'&&!/iPad|iPhone|iPod/.test(navigator.userAgent);
