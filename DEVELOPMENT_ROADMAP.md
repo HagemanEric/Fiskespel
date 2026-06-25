@@ -1,546 +1,306 @@
 # Fiskespel — Development Roadmap
 
-This roadmap defines eight phases from prototype stabilization through release preparation. Each phase has clear goals, deliverables, exit criteria, and dependencies. Timelines are indicative and assume a small team (1–3 developers); adjust proportionally for team size.
+Den här roadmapen beskriver hur vi tar **Munksjön-prototypen** (`index.html`) från balansverktyg till **riktigt spel i Godot**. Prototypen är en **testmaskin** för fiskekänsla och balans — inte produktionskod och inte en webb-3D-motor.
 
-**Guiding principle:** Preserve the validated game design from the Munksjön prototype while rebuilding architecture, rendering, and content systems for scale.
+**Principer:**
+
+- Finjustera odds, fight, progression och UX i HTML-prototypen så länge det går snabbt.
+- Dokumentera regler och formler så de kan byggas om i Godot utan att gissa.
+- Bygg **inte** om prototypen till Vite/TypeScript.
+- Bygg **inte** en 3D-motor i webben — det riktiga spelet skapas i **Godot 4**.
 
 ---
 
-## Roadmap Overview
+## Översikt
 
 ```
-Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5
-Stabilize    Refactor     3D Engine   Simulation   World/Data
-                                              │
-                    Phase 6 ◄─────────────────┘
-                    Alpha
-                      │
-              Phase 7 ──► Phase 8
-              Beta         Release Prep
+Fas 1 ──► Fas 2 ──► Fas 3 ──► Fas 4 ──► Fas 5 ──► Fas 6
+Stabilisera  Strukturera  Fiskekänsla  Speltest    Exportera   Godot
+(KLAR)       (KLAR)       & balans     fiskare     regler      rebuild
 ```
 
-| Phase | Name | Indicative Duration | Primary Output |
-|-------|------|---------------------|----------------|
-| 1 | Prototype Stabilization | 2–4 weeks | Reliable demo with persistence |
-| 2 | Architecture Refactoring | 4–6 weeks | Modular, tested codebase |
-| 3 | 3D Engine Migration Strategy | 3–4 weeks | Engine choice + vertical slice plan |
-| 4 | Fishing Simulation Systems | 8–12 weeks | Deep sim modules |
-| 5 | World and Data Integration | 8–12 weeks | Location pipeline + real data |
-| 6 | Alpha Version | 6–8 weeks | Playable 3D Munksjön alpha |
-| 7 | Beta Version | 10–14 weeks | Multi-location beta |
-| 8 | Release Preparation | 6–10 weeks | Store-ready build |
-
-**Total indicative range:** 18–24 months to release, depending on team size and scope cuts.
+| Fas | Namn | Status | Primärt resultat |
+|-----|------|--------|------------------|
+| 1 | Stabilisera prototypen | **KLAR** | Sparbar demo, städad kodbas, dokumentation |
+| 2 | Strukturera koden | **KLAR** | Tydliga JS-sektioner, balansvärden lätta att hitta |
+| 3 | Färdigställ fiskekänsla och balans | Pågår / nästa | Verifierad känsla, level 1–5 ≈ 25 min |
+| 4 | Speltest med riktiga fiskare | Planerad | Kalibrerade konstanter utifrån extern feedback |
+| 5 | Exportera reglerna | Planerad | Formler och systemlogik i Godot-vänligt format |
+| 6 | Bygg om i Godot | Planerad | Godot-projekt enligt koncept + prototyp som ritning |
 
 ---
 
-## Phase 1: Prototype Stabilization
+## Fas 1 — Stabilisera prototypen ✅ KLAR
 
-**Goal:** Make the existing single-file prototype reliable, measurable, and usable as a persistent reference demo — without changing the fundamental architecture yet.
+**Mål:** Göra prototypen tillförlitlig som testverktyg utan att ändra dess roll.
 
-### Objectives
+### Utfört / leverabler
 
-- Fix known gaps in the current prototype experience
-- Add session persistence so playtesting accumulates meaningful progress
-- Establish baseline documentation and project hygiene
-- Instrument the prototype for design validation
+- [x] Refaktorerad `index.html` som enda spelfil
+- [x] Tydlig kodstruktur med kommenterade sektioner
+- [x] `PROJECT_OVERVIEW.md`, `TECHNICAL_ARCHITECTURE.md`, `DEVELOPMENT_ROADMAP.md`
+- [ ] `localStorage`-sparning av framsteg *(rekommenderat nästa steg om inte redan implementerat)*
+- [ ] Båtköp i shop om trolling ska testas fullt ut
 
-### Tasks
+### Exitkriterier
 
-| # | Task | Priority |
-|---|------|----------|
-| 1.1 | Add `localStorage` save/load for `G` state (level, currency, log, equipment) | High |
-| 1.2 | Implement boat purchase in shop (kr cost, sets `G.boat = true`) | High |
-| 1.3 | Cache shop thumbnails by rod/skin combo to avoid redundant PNG generation | Medium |
-| 1.4 | Add basic error handling for Three.js CDN failure (user-visible message) | Medium |
-| 1.5 | Remove stray `Untitled` file; add README pointing to docs | Low |
-| 1.6 | Pin Three.js with Subresource Integrity (SRI) hash or vendor locally | Medium |
-| 1.7 | Document all tunable constants (`TAK`, `K`, `GOLV`, XP curve) in GDD appendix | High |
-| 1.8 | Manual playtest checklist covering all methods, species, and unlock paths | High |
-
-### Deliverables
-
-- [ ] Persistent prototype (progress survives refresh)
-- [ ] Complete boat unlock → trolling flow
-- [ ] `PROJECT_OVERVIEW.md`, `TECHNICAL_ARCHITECTURE.md`, `DEVELOPMENT_ROADMAP.md` (this set)
-- [ ] Playtest checklist and constant tuning log
-
-### Exit Criteria
-
-- A new tester can play for 30+ minutes across multiple sessions without losing progress
-- All four fishing methods are reachable and completable
-- Documentation accurately describes the prototype
-
-### Risks
-
-- Over-investing in prototype code that will be replaced — keep changes minimal and clearly scoped
+- Spelare kan testa alla metoder och progression utan att tappa kontext mellan sessioner
+- Dokumentation beskriver prototypen som **balansverktyg**, inte slutprodukt
 
 ---
 
-## Phase 2: Architecture Refactoring
+## Fas 2 — Strukturera koden ✅ KLAR
 
-**Goal:** Extract the monolithic `index.html` into a maintainable modular structure while preserving identical gameplay behavior.
+**Mål:** Göra balansvärden och spellogik lätta att hitta, justera och förklara.
 
-### Objectives
+### Kodsektioner i `index.html`
 
-- Introduce build tooling and TypeScript
-- Separate simulation logic from rendering and UI
-- Add automated tests for core game math
-- Prepare a portable `core` package for engine migration
+| Sektion | Innehåll |
+|---------|----------|
+| **KONFIGURATION** | `BITE_CEILING`, `ODDS_SATURATION`, XP-kurva, haptik |
+| **ARTDATA** | Arter, metoder, tider, platser, utrustning |
+| **SPELSTATE** | `gameState`, `sceneState`, runtime-variabler |
+| **FÅNGSTMOTOR** | Nappchans, artval, storlek, kast, fight |
+| **EKONOMI** | Försäljning, shop, valutor |
+| **PROGRESSION** | XP, levelup, upplåsningar |
+| **FISKELOGG** | Rekord, storleksklasser |
+| **UI** | Canvas, HUD, shop, modal |
+| **EVENTHANTERING** | Input och init |
 
-### Tasks
+### Exitkriterier
 
-| # | Task | Priority |
-|---|------|----------|
-| 2.1 | Initialize project with Vite + TypeScript | High |
-| 2.2 | Split into modules: `config/`, `sim/`, `state/`, `ui/`, `render/canvas2d/`, `render/shop3d/` | High |
-| 2.3 | Extract static data to JSON files (`species.json`, `methods.json`, etc.) | High |
-| 2.4 | Port `odds()`, `pickAndSize()`, `fightTick()`, `xpNeed()`, `lf()` to `packages/core` | High |
-| 2.5 | Unit tests for odds engine (bite rate bounds, quality scoring, size distribution) | High |
-| 2.6 | Unit tests for fight outcomes (snap threshold, stamina depletion, run cycles) | High |
-| 2.7 | Replace `innerHTML` with DOM templating or safe HTML utilities | Medium |
-| 2.8 | Introduce typed interfaces for `G`, `SC`, species, methods | High |
-| 2.9 | CI pipeline: lint, typecheck, test on push | Medium |
-| 2.10 | Maintain visual parity with original prototype (screenshot diff or manual sign-off) | High |
+- En designer/utvecklare kan justera `TAK`, `K`, XP-bas m.m. utan att leta i renderingskod
+- Variabelnamn på engelska, spelartext på svenska
 
-### Target module structure
+---
+
+## Fas 3 — Färdigställ fiskekänsla och balans
+
+**Mål:** Prototypen ska ge **tillförlitlig designdata** för Godot — inte visuell polish.
+
+### Fokusområden
+
+| Område | Vad som ska kännas rätt |
+|--------|-------------------------|
+| **Hugg** | Hookset-fönster, artspecifik haptik, missade hugg |
+| **Fight** | Spänning, rusningar, ge lina vs reva, linbrott |
+| **Nappfrekvens** | `BITE_CEILING`, `ODDS_SATURATION`, metod/plats/tid, spöbonus |
+| **Storleksmodell** | `sizeReach`, kvalitet, stor/bra/liten utan rekordfisk på låg level |
+| **Progression** | Level 1→5 ≈ **25 min** aktivt fiske med nuvarande XP-kurva |
+
+### Uppgifter
+
+| # | Uppgift |
+|---|---------|
+| 3.1 | Speltestprotokoll: mät tid level 1→5 med neutralt upplägg |
+| 3.2 | Justera `XP_BASE`, `BITE_CEILING`, `ODDS_SATURATION` tills måltempo nås |
+| 3.3 | Verifiera att varje art känns distinkt i fight (haptik + stamina/runs) |
+| 3.4 | Verifiera metodskillnad (mete vs spinn vs jig vs troll) |
+| 3.5 | Logga ändrade konstanter i en **balansjournal** (datum, värde, varför) |
+| 3.6 | Bekräfta att shop/ekonomi inte snedvrider nappfrekvens vs storlek (spö = frekvens, upplägg = storlek) |
+
+### Leverabler
+
+- [ ] Balansjournal med godkända standardvärden
+- [ ] Speltestprotokoll ifyllt (minst 3 interna pass)
+- [ ] Sign-off: “känslan är tillräcklig för att skriva spec”
+
+### Exitkriterier
+
+- Level 1→5 ligger inom **20–30 min** vid avsett spelsätt
+- Teamet kan beskriva varje kärnformel utan att läsa implementationen rad för rad
+- Inga kända P0-buggar i kärnloopen (kast → napp → fight → belöning)
+
+### Beroenden
+
+- Fas 1 och 2 klara
+
+---
+
+## Fas 4 — Speltest med riktiga fiskare
+
+**Mål:** Extern validering — att känslan och tempot fungerar för målgruppen, inte bara för teamet.
+
+### Uppgifter
+
+| # | Uppgift |
+|---|---------|
+| 4.1 | Rekrytera 5–10 testfiskare (bland nybörjare och erfarna) |
+| 4.2 | Ge testare en enkel instruktion — inga dev-verktyg |
+| 4.3 | Samla kvalitativ feedback: napp, fight, progression, frustration |
+| 4.4 | Samla kvantitativ data: tid till level 5, antal kast per fångst, metodval |
+| 4.5 | Kalibrera `XP_BASE` och balansvärden utifrån feedback |
+| 4.6 | Prioritera ändringar: endast det som påverkar **regler**, inte webb-UI |
+
+### Leverabler
+
+- [ ] Speltestrapport med citat och rekommenderade konstantjusteringar
+- [ ] Uppdaterad balansjournal (version “fiskare-validated”)
+- [ ] Lista över medvetna avvikelser (saker vi accepterar i prototypen men inte i Godot)
+
+### Exitkriterier
+
+- Testfiskare förstår loopen utan förklaring efter < 2 min
+- Ingen dominerande frustration kring “inget napp” eller “för lätt linbrott” utan att det går att justera med konstanter
+- Godkända balansvärden frysta som **referens för Fas 5**
+
+### Beroenden
+
+- Fas 3 exitkriterier uppfyllda
+
+---
+
+## Fas 5 — Exportera reglerna
+
+**Mål:** Prototypens JavaScript ska **inte** portas — reglerna ska **dokumenteras** så Godot kan implementera dem rent.
+
+### Exportera (minimikrav)
+
+| Dokument / artefakt | Innehåll |
+|---------------------|----------|
+| **Formelspec** | `computeRawWeight`, `computeBiteOdds`, `pickSpeciesAndSize`, fight-tick, `xpRequiredForLevel`, `getLevelFactors` |
+| **Datatabeller** | Arter, metoder, tider, platser, spön — som JSON eller markdown-tabeller |
+| **Tillståndsmaskin** | `sceneState.mode` och övergångar |
+| **Balansjournal** | Slutgiltiga konstanter med motivering |
+| **Känsloregler** | Haptikmönster, rusningar, fake nibbles — beskrivet beteende, inte DOM-kod |
+
+### Önskat format för Godot
 
 ```
-src/
-├── config/          # JSON loaders, constants
-├── sim/
-│   ├── odds.ts
-│   ├── catch.ts
-│   ├── fight.ts
-│   └── progression.ts
-├── state/
-│   ├── gameState.ts
-│   └── saveService.ts
-├── ui/
-├── render/
-│   ├── canvas/
-│   └── shop/
-└── main.ts
+docs/
+├── balance/
+│   ├── constants.json          # TAK, K, XP_BASE, GEAR_CAP, …
+│   ├── species.json
+│   ├── methods.json
+│   ├── times.json
+│   └── spots.json
+├── specs/
+│   ├── bite_engine.md
+│   ├── fight_engine.md
+│   ├── progression.md
+│   └── state_machine.md
+└── playtest/
+    └── balance_journal.md
 ```
 
-### Deliverables
+### Uppgifter
 
-- [ ] Modular TypeScript codebase with Vite dev server
-- [ ] `packages/core` with 80%+ test coverage on simulation functions
-- [ ] JSON-driven species, methods, spots, times, gear
-- [ ] GitHub Actions CI
+| # | Uppgift |
+|---|---------|
+| 5.1 | Skriv `bite_engine.md` med alla formler och exempel (in-/utdata) |
+| 5.2 | Skriv `fight_engine.md` med variabler, runs, snap/surface |
+| 5.3 | Exportera art-/metoddata till JSON som matchar prototypen exakt |
+| 5.4 | Verifiera JSON mot prototyp: samma napp% och storleksfördelning vid givet seed/upplägg |
+| 5.5 | Beskriv avsiktligt **inte** portat: canvas-ritning, Three.js-shop, CSS |
 
-### Exit Criteria
+### Exitkriterier
 
-- All prototype gameplay behavior matches pre-refactor baseline
-- Simulation modules have zero DOM/Canvas dependencies
-- A developer can modify species data in JSON without touching logic code
+- En Godot-utvecklare kan implementera FÅNGSTMOTOR + PROGRESSION utan att läsa `index.html`
+- Alla tunable constants finns på ett ställe utanför prototypen
+- Minst ett manuellt verifierat exempel per kärnformel ( “givet X → förväntat Y” )
 
-### Dependencies
+### Beroenden
 
-- Phase 1 complete (persistence and docs in place)
-
----
-
-## Phase 3: 3D Engine Migration Strategy
-
-**Goal:** Select a production game engine and define the migration path from 2D canvas to 3D environments — without committing to full content production yet.
-
-### Objectives
-
-- Evaluate engines against project requirements
-- Build a technical spike proving shore casting in 3D water
-- Define asset pipeline and project template
-- Plan coexistence or cutover from web prototype
-
-### Engine evaluation criteria
-
-| Criterion | Weight | Notes |
-|-----------|--------|-------|
-| Water rendering quality | High | Lakes, rivers, coastal |
-| Terrain/GIS import | High | Swedish elevation and shoreline data |
-| Mobile performance | High | Prototype is mobile-first |
-| Team familiarity | Medium | Learning curve budget |
-| Asset pipeline | Medium | GLTF, modular gear |
-| Licensing cost | Medium | Indie-friendly |
-| Multiplayer (future) | Low | Not in initial scope |
-
-### Recommended candidates
-
-1. **Unity (URP)** + Crest/Ocean or similar water asset
-2. **Unreal Engine 5** + Water plugin
-3. **Godot 4** — fallback if team prioritizes open source and lighter builds
-
-### Tasks
-
-| # | Task | Priority |
-|---|------|----------|
-| 3.1 | Write engine decision document with scored comparison | High |
-| 3.2 | One-week spike: simple lake mesh, water surface, shore camera, cast arc | High |
-| 3.3 | Spike: import `packages/core` sim logic into engine (C# or GDScript bindings) | High |
-| 3.4 | Define folder structure and coding conventions for engine project | High |
-| 3.5 | Prototype rod/lure rendering approach (GLTF vs procedural) | Medium |
-| 3.6 | Target platform matrix (WebGL? Mobile native? PC?) | High |
-| 3.7 | Performance budget document (draw calls, fish agents, draw distance) | Medium |
-| 3.8 | Migration cutover plan: retire canvas client vs maintain web demo | Medium |
-
-### Deliverables
-
-- [ ] Engine Decision Record (ADR)
-- [ ] 3D vertical slice spike (video + repo branch)
-- [ ] Engine project template with sim integration
-- [ ] Platform and performance budget doc
-
-### Exit Criteria
-
-- Team agrees on engine and primary platform targets
-- Spike demonstrates cast → lure in water → bite trigger in 3D
-- `packages/core` runs inside engine with matching bite/fight results to web tests
-
-### Dependencies
-
-- Phase 2 complete (portable sim core)
+- Fas 4: frysta balansvärden
 
 ---
 
-## Phase 4: Fishing Simulation Systems
+## Fas 6 — Bygg om i Godot
 
-**Goal:** Replace probabilistic placeholder mechanics with a deep, extensible fishing simulation that supports realistic species behavior and gear interaction.
+**Mål:** Skapa det riktiga spelet i **Godot 4** med prototypen och Fas 5-specarna som ritning.
 
-### Objectives
+### Scope (initial Godot-vertical)
 
-- Evolve bite model from random rolls to environment- and behavior-aware decisions
-- Expand fight system with species-specific profiles
-- Implement gear depth (line, lures, rod properties beyond bite frequency)
-- Add audio and haptic layers
+- Kärnloop: upplägg → kast → napp → fight → landning → belöning
+- Portade regler från Fas 5 (inte kopierad JS)
+- En referensmiljö (Munksjön) — enkel 3D, fokus på gameplay
+- Progression, logg, grundläggande ekonomi
 
-### Simulation layers
+### Medvetet senare i Godot (ej blockerande för vertical)
 
-```
-Layer 4: Fight        — tension, runs, jumps, structure break-offs
-Layer 3: Bite         — lure match, presentation, fish mood
-Layer 2: Fish agent   — position, depth, hunger, fear, species AI
-Layer 1: Population   — density, size distribution, stocking
-Layer 0: Environment  — time, season, temp, weather, habitat
-```
+- Hundratals sjöar och datadriven värld
+- SMHI/SLU-integration
+- Båt/kajak, full väder/årstid
+- Skalbar content pipeline
 
-### Tasks
+### Uppgifter
 
-| # | Task | Priority |
-|---|------|----------|
-| 4.1 | `EnvironmentSim` — extend TIMES model to full state vector | High |
-| 4.2 | `FishPopulation` — habitat-based density and size distribution | High |
-| 4.3 | `FishAgent` — basic state machine (idle, feeding, fleeing, hooked) | High |
-| 4.4 | `BiteSimulator` v2 — lure profile vs species preference matrix | High |
-| 4.5 | `FightController` v2 — species profiles (pike long runs, perch head shakes) | High |
-| 4.6 | Gear system — line weight, lure types, hook sizes (gameplay + UI) | Medium |
-| 4.7 | Method controllers — port mete, spinn, jig, troll to engine input | High |
-| 4.8 | Audio system — water ambient, cast, splash, reel, species fight cues | Medium |
-| 4.9 | Haptic profiles — port `HAP` patterns to native/platform APIs | Low |
-| 4.10 | Remote config for tunable constants (`TAK`, `K`, XP curve) | Medium |
-| 4.11 | Automated sim tests — regression suite for bite rates and fight duration | High |
+| # | Uppgift |
+|---|---------|
+| 6.1 | Godot 4-projektstruktur (`scenes/`, `scripts/`, `data/`, `assets/`) |
+| 6.2 | Implementera bitespec i GDScript |
+| 6.3 | Implementera fightspec med artspecifika profiler |
+| 6.4 | Input för mobil + PC (touch + mus/tangentbord) |
+| 6.5 | Spara/ladda spelstate |
+| 6.6 | Enkel 3D-scen: vatten, strand, kastbåge, lure |
+| 6.7 | Regression: jämför Godot vs prototyp på samma upplägg (napp%, fightlängd) |
 
-### Deliverables
+### Exitkriterier
 
-- [ ] Documented simulation API with layer diagram
-- [ ] Fish agent prototype in test harness (headless or debug view)
-- [ ] Fight profiles for all five starter species
-- [ ] Gear and lure data schema
-- [ ] Audio pass on core actions
+- Spelbar vertical slice i Godot med **samma regler** som frysta prototypvärden
+- `index.html` arkiveras som referens — uppdateras endast för balans om spelet i Godot skiljer sig och prototypen behövs för A/B
 
-### Exit Criteria
+### Beroenden
 
-- Bite decisions respond measurably to environment changes (e.g., dawn improves gädda activity)
-- Each species has distinguishable fight feel
-- Sim regression tests pass in CI
-
-### Dependencies
-
-- Phase 3 complete (engine + sim integration)
+- Fas 5 komplett
 
 ---
 
-## Phase 5: World and Data Integration
-
-**Goal:** Build the content pipeline and integrate real Swedish geographic and ecological data so locations are authored as data, not as one-off scenes.
-
-### Objectives
-
-- Define location pack format and validation tooling
-- Integrate first real data sources for Munksjön
-- Build habitat tagging on spatial cells
-- Establish content authoring workflow
-
-### Data sources (investigate licensing early)
-
-| Source | Data type |
-|--------|-----------|
-| SLU | Species distribution, regulations, stocking |
-| SMHI | Weather, temperature, hydrology |
-| Lantmäteriet / open geodata | Shorelines, elevation, orthophotos |
-| Sportfiske record databases | Trophy weights for record tiers |
-
-### Tasks
-
-| # | Task | Priority |
-|---|------|----------|
-| 5.1 | Finalize JSON schemas for locations, species, regulations | High |
-| 5.2 | Build `content-tools` CLI: validate, pack, publish location bundles | High |
-| 5.3 | Import pipeline: GeoJSON shoreline → terrain mesh | High |
-| 5.4 | Bathymetry integration (raster → depth mesh or volume) | Medium |
-| 5.5 | Habitat cell generator — auto-tag vass, rev, djup from depth/slope | High |
-| 5.6 | Munksjön location pack v1 with real boundary and placeholder bathymetry | High |
-| 5.7 | Regional species table — map prototype species to Latin IDs and eco regions | High |
-| 5.8 | Regulations module — seasons, minimum sizes (read-only display first) | Medium |
-| 5.9 | CDN publish workflow for location packs | Medium |
-| 5.10 | Content QA checklist — species match eco region, no orphan references | High |
-
-### Spatial hierarchy
-
-```
-Region (e.g., SE-F)
-  └── WaterBody (munksjon)
-        └── SubArea (north_bay, south_shore, …)
-              └── HabitatCell (grid cell with tags and depth)
-```
-
-### Deliverables
-
-- [ ] JSON Schema files with validation in CI
-- [ ] `content-tools` CLI documented
-- [ ] Munksjön location pack v1 on CDN
-- [ ] Authoring guide for adding a new lake
-
-### Exit Criteria
-
-- A new lake can be added by supplying GeoJSON + species table + habitat rules without engine code changes
-- Munksjön loads from data pack with correct shoreline and habitat tags
-- All content passes automated validation
-
-### Dependencies
-
-- Phase 4 in progress (sim layers consume habitat and environment data)
-
----
-
-## Phase 6: Alpha Version
-
-**Goal:** Deliver a playable **alpha** focused on one reference lake (Munksjön) in 3D with core loop, save system, and starter content set.
-
-### Alpha scope (explicit inclusions)
-
-- Munksjön 3D environment (shore fishing)
-- Five starter species with sim v2 behavior
-- Four fishing methods (mete, spinn, vertikal, troll with boat)
-- Day/night cycle with environment effects on activity
-- Progression, shop (rods), catch log, records
-- Cloud save (single account)
-- Basic audio
-
-### Alpha scope (explicit exclusions)
-
-- Multiple lakes
-- Kayak mode
-- Full weather simulation
-- Multiplayer
-- Localized languages beyond Swedish
-
-### Tasks
-
-| # | Task | Priority |
-|---|------|----------|
-| 6.1 | Munksjön 3D scene — terrain, water, vegetation, sky | High |
-| 6.2 | Player controller — shore movement, cast camera | High |
-| 6.3 | Integrate all method controllers with 3D lure/bait | High |
-| 6.4 | UI migration — retain prototype UX patterns in engine UI | High |
-| 6.5 | Save system — local + cloud sync | High |
-| 6.6 | Shop with 3D rod preview (port from prototype) | Medium |
-| 6.7 | Internal playtest build distribution (TestFlight, itch.io, or Steam playtest) | High |
-| 6.8 | Crash reporting and basic analytics (session length, catches, retention) | Medium |
-| 6.9 | Alpha test plan and feedback collection process | High |
-| 6.10 | Known issues list and alpha release notes | High |
-
-### Milestones
-
-| Milestone | Target signal |
-|-----------|---------------|
-| Alpha 0.1 | Cast and retrieve in 3D Munksjön |
-| Alpha 0.5 | Full loop with fight and rewards |
-| Alpha 1.0 | Feature-complete alpha scope, cloud save |
-
-### Exit Criteria
-
-- External testers complete full loop without developer assistance
-- Session retention measurable across 3+ sessions
-- No P0 crashes in 1-hour play sessions
-- Team sign-off on fun parity with 2D prototype
-
-### Dependencies
-
-- Phases 3, 4, 5 substantially complete
-
----
-
-## Phase 7: Beta Version
-
-**Goal:** Expand content and simulation depth; validate scalability toward hundreds of locations and prepare for polish pass.
-
-### Beta scope additions
-
-- 10–20 Swedish water bodies (mix of lakes and one river stretch)
-- Boat fishing mode with vessel movement
-- Weather and seasonal modifiers (SMHI-driven or simulated)
-- Extended species roster (15–25 species)
-- Gear depth — lure library, line/leader selection
-- Kayak fishing (if performance allows)
-- Regulation display and seasonal closures
-- Performance optimization pass
-
-### Tasks
-
-| # | Task | Priority |
-|---|------|----------|
-| 7.1 | Roll out location pipeline to 10+ waters | High |
-| 7.2 | Boat controller — movement, anchoring, trolling paths | High |
-| 7.3 | Weather system — wind, rain, cloud cover affecting presentation | High |
-| 7.4 | Season system — ice cover, spawning periods, activity tables | High |
-| 7.5 | Species expansion with regional filtering | High |
-| 7.6 | Lure library and shop expansion | Medium |
-| 7.7 | Kayak mode (scope gate at beta mid-point) | Medium |
-| 7.8 | Localization framework (Swedish complete; English optional) | Medium |
-| 7.9 | Balance pass — bite rates, economy, XP curve from alpha telemetry | High |
-| 7.10 | Closed beta program with NDA testers | High |
-| 7.11 | Accessibility audit — motion, contrast, input alternatives | Medium |
-| 7.12 | Platform builds — target stores identified in Phase 3 | High |
-
-### Beta milestones
-
-| Milestone | Content |
-|-----------|---------|
-| Beta 0.1 | 3 lakes + boat mode |
-| Beta 0.5 | 10 lakes + weather |
-| Beta 1.0 | 20 locations + full beta scope |
-
-### Exit Criteria
-
-- Content pipeline produces a new lake in < 5 days author time (not engine time)
-- Beta testers report ≥ 4/5 satisfaction on core loop
-- Performance targets met on minimum spec devices
-- Economy and progression validated over 10+ hours of play
-
-### Dependencies
-
-- Phase 6 alpha feedback incorporated
-- Phase 5 pipeline proven on multiple locations
-
----
-
-## Phase 8: Release Preparation
-
-**Goal:** Polish, certify, and ship a stable v1.0 with sustainable live-ops infrastructure.
-
-### Objectives
-
-- Production quality across audio, visuals, UX, and performance
-- Store submission and compliance
-- Live content update pipeline
-- Post-launch support plan
-
-### Tasks
-
-| # | Task | Priority |
-|---|------|----------|
-| 8.1 | Full QA pass — regression, edge cases, all locations | High |
-| 8.2 | Performance profiling and optimization on min-spec hardware | High |
-| 8.3 | Final audio mix and missing SFX/Music | High |
-| 8.4 | Tutorial/onboarding for new players | High |
-| 8.5 | Store assets — screenshots, trailers, descriptions (Swedish + optional EN) | High |
-| 8.6 | Platform certification (Apple, Google, Steam as applicable) | High |
-| 8.7 | Privacy policy, terms, GDPR compliance for cloud saves | High |
-| 8.8 | Launch location set curation (30–50 waters for v1.0) | High |
-| 8.9 | Remote config and hotfix pipeline for balance constants | High |
-| 8.10 | Customer support workflow and bug triage process | Medium |
-| 8.11 | Marketing site and press kit | Medium |
-| 8.12 | Post-launch roadmap — regional expansions, coastal waters, live events | Medium |
-| 8.13 | v1.0 release notes and migration from beta saves | High |
-
-### Release criteria checklist
-
-- [ ] Zero P0/P1 known bugs
-- [ ] Crash-free sessions > 99% in final beta cohort
-- [ ] All launch locations pass content validation
-- [ ] Store approval obtained on all target platforms
-- [ ] Rollback plan for content packs and client builds documented
-- [ ] Monitoring dashboards for crashes, retention, and economy
-
-### Post-release live ops (ongoing)
-
-| Activity | Frequency |
-|----------|-----------|
-| Balance tuning via remote config | Bi-weekly |
-| New location packs | Monthly (target) |
-| Seasonal regulation updates | Quarterly |
-| Bug fix patches | As needed |
-
-### Dependencies
-
-- Phase 7 beta sign-off
-- Legal review of data source attributions
-
----
-
-## Cross-Phase Concerns
-
-### Testing strategy
-
-| Phase | Test type |
-|-------|-----------|
-| 1–2 | Unit tests on sim math; manual playtest |
-| 3 | Spike evaluation; performance profiling |
-| 4–5 | Sim regression; content validation CI |
-| 6–8 | Integration, soak, beta feedback, certification |
-
-### Documentation maintenance
-
-Update `PROJECT_OVERVIEW.md` and `TECHNICAL_ARCHITECTURE.md` at the end of each phase to reflect actual decisions (especially engine choice in Phase 3 and schema changes in Phase 5).
-
-### Scope management
-
-If timeline pressure occurs, cut in this order:
-
-1. Kayak mode (defer past beta)
-2. Coastal waters (defer to post-release)
-3. Species count (launch with 15 instead of 25)
-4. Weather depth (simplify to preset states vs live SMHI)
-5. Location count at launch (30 instead of 50)
-
-Never cut: save system, core loop quality, Munksjön reference quality, or content validation pipeline.
-
----
-
-## Appendix: Phase Dependency Graph
+## Beroendegraf
 
 ```mermaid
 flowchart LR
-    P1[Phase 1\nStabilization]
-    P2[Phase 2\nRefactoring]
-    P3[Phase 3\n3D Strategy]
-    P4[Phase 4\nSimulation]
-    P5[Phase 5\nWorld/Data]
-    P6[Phase 6\nAlpha]
-    P7[Phase 7\nBeta]
-    P8[Phase 8\nRelease]
+    F1[Fas 1\nStabilisera\n✅]
+    F2[Fas 2\nStrukturera\n✅]
+    F3[Fas 3\nFiskekänsla]
+    F4[Fas 4\nSpeltest fiskare]
+    F5[Fas 5\nExportera regler]
+    F6[Fas 6\nGodot]
 
-    P1 --> P2
-    P2 --> P3
-    P3 --> P4
-    P3 --> P5
-    P4 --> P6
-    P5 --> P6
-    P6 --> P7
-    P7 --> P8
+    F1 --> F2
+    F2 --> F3
+    F3 --> F4
+    F4 --> F5
+    F5 --> F6
 ```
+
+**Parallellt arbete:** Tidig Godot-spike (teknik, vatten, input) kan påbörjas sent i Fas 5 om specs skrivs löpande — men **balans ska inte låsas i Godot förrän Fas 4 är klar**.
 
 ---
 
-*Last updated: June 2025. Review and revise at the end of each phase.*
+## Teststrategi
+
+| Fas | Vad testas | Hur |
+|-----|------------|-----|
+| **1–2** | Prototypen går att spela; sektioner går att navigera | Manuell smoke test |
+| **3** | Känsla, tempo, napp/fight/storlek | Strukturerat internt speltest + tidmätning level 1→5 |
+| **4** | Målgruppsacceptans, kalibrering | Externa testfiskare, enkät + sessionlogg |
+| **5** | Regler är kompletta och korrekta | Formel-exempel, JSON vs prototyp (samma inputs → samma outputs) |
+| **6** | Godot matchar specs | Regression mot Fas 5-exempel; playtest av vertical slice |
+
+**Medvetet utelämnat i prototyp-faserna:** enhetstester i CI, Vite, TypeScript, webb-3D-prestanda.
+
+---
+
+## Scope — vad vi inte gör
+
+| Avböjt | Varför |
+|--------|--------|
+| Vite + TypeScript-refaktor | Prototypen ska vara lätt att tweaka, inte produktionsarkitektur |
+| 3D-motor i webben | Riktigt spel byggs i Godot |
+| Unity / Unreal | Beslut: Godot 4 |
+| Content pipeline för hundratals sjöar | Kommer efter Godot-vertical, inte i prototyp-faserna |
+
+---
+
+## Dokumentation
+
+Uppdatera vid fasövergång:
+
+- `PROJECT_OVERVIEW.md` — produktvision och prototyp vs Godot
+- `TECHNICAL_ARCHITECTURE.md` — prototypsektioner + målarkitektur Godot
+- Denna fil — status per fas
+
+---
+
+*Senast uppdaterad: juni 2025. Fas 1–2 markerade KLAR; Fas 3 är nästa aktiva fas.*

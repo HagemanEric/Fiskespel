@@ -1,170 +1,132 @@
 # Fiskespel — Technical Architecture
 
-This document describes the **current prototype architecture** and the **target production architecture** for a scalable 3D Swedish fishing game. It is intended for developers planning the migration from the single-file demo to a data-driven simulation platform.
+This document describes the **HTML prototype architecture** (`index.html`) and the **target Godot architecture** for the real game. The prototype is a **balance test machine** — not production code and not a path to a web-based 3D engine.
 
 ---
 
 ## Table of Contents
 
-1. [Current Architecture](#1-current-architecture)
-2. [System Components (Prototype)](#2-system-components-prototype)
+1. [Architecture Overview](#1-architecture-overview)
+2. [Prototype Structure (`index.html`)](#2-prototype-structure-indexhtml)
 3. [Data Model (Prototype)](#3-data-model-prototype)
-4. [Rendering Pipeline (Prototype)](#4-rendering-pipeline-prototype)
-5. [Input and Platform (Prototype)](#5-input-and-platform-prototype)
-6. [Simulation Logic (Prototype)](#6-simulation-logic-prototype)
-7. [Known Limitations](#7-known-limitations)
-8. [Target Architecture](#8-target-architecture)
-9. [Target Data Schema](#9-target-data-schema)
-10. [Technology Recommendations](#10-technology-recommendations)
-11. [Migration Mapping](#11-migration-mapping)
+4. [Simulation Logic (Prototype)](#4-simulation-logic-prototype)
+5. [Rendering and Input (Prototype)](#5-rendering-and-input-prototype)
+6. [Known Limitations (Prototype)](#6-known-limitations-prototype)
+7. [Target Architecture (Godot)](#7-target-architecture-godot)
+8. [Rule Export Format (Phase 5)](#8-rule-export-format-phase-5)
+9. [Migration Mapping: Prototype → Godot](#9-migration-mapping-prototype--godot)
 
 ---
 
-## 1. Current Architecture
+## 1. Architecture Overview
 
-### 1.1 High-level diagram
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  TODAY: index.html — balance & feel test bed                     │
+│  Single file · Canvas 2D gameplay · rules in commented sections  │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │ Phase 5: export rules (not port JS)
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  TARGET: Godot 4 — shippable game                                │
+│  3D environments · GDScript · data-driven content (later)        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Explicitly out of scope for the prototype path:**
+
+- Vite, TypeScript, or module bundlers
+- Web-based 3D game engine or open-world renderer
+- Unity or Unreal
+
+Three.js in the prototype is **shop-only** (rod preview). It is not part of the production rendering plan.
+
+---
+
+## 2. Prototype Structure (`index.html`)
+
+### 2.1 File layout
+
+| Layer | Location |
+|-------|----------|
+| HTML structure | Lines 1–185 (unchanged during refactor) |
+| CSS | Inline `<style>` (unchanged) |
+| JavaScript | Single `<script>` block with nine sections |
+
+### 2.2 JavaScript sections
+
+| Section | Responsibility |
+|---------|----------------|
+| **KONFIGURATION** | `BITE_CEILING`, `ODDS_SATURATION`, `PREDATOR_LEVEL_BONUS`, `GEAR_CAP`, XP curve, haptics |
+| **ARTDATA** | `SPECIES`, `METHODS`, `TIMES`, `SPOTS`, `RODS`, `SKINS` |
+| **SPELSTATE** | `gameState`, `sceneState`, canvas/shop runtime vars |
+| **FÅNGSTMOTOR** | Odds, species/size pick, cast, fight, `updateFishingScene` |
+| **EKONOMI** | Landing rewards, shop purchases |
+| **PROGRESSION** | `grantXp`, level unlocks |
+| **FISKELOGG** | Per-species log and records |
+| **UI** | Canvas draw, HUD, shop (Three.js), modals |
+| **EVENTHANTERING** | Input bindings, `initGame()` |
+
+Code identifiers are **English**; comments are **Swedish**; player-facing strings are **Swedish**.
+
+### 2.3 High-level diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      index.html (monolith)                   │
+│                      index.html                              │
 ├─────────────────────────────────────────────────────────────┤
-│  HTML structure  │  Inline CSS  │  Inline JavaScript        │
-├──────────────────┴──────────────┴───────────────────────────┤
-│                                                              │
-│   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐    │
-│   │  Tab Router  │   │  Game State  │   │ Static Config│    │
-│   │  (DOM tabs)  │   │  G, SC, lure │   │ SP,METHODS…  │    │
-│   └──────┬───────┘   └──────┬───────┘   └──────┬───────┘    │
-│          │                  │                  │            │
-│          ▼                  ▼                  ▼            │
-│   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐    │
-│   │  UI Layer    │   │ State Machine│   │ Odds Engine  │    │
-│   │  panels/modal│   │ SC.mode      │   │ bite/size    │    │
-│   └──────────────┘   └──────┬───────┘   └──────────────┘    │
-│                             │                                │
-│              ┌──────────────┼──────────────┐                │
-│              ▼              ▼              ▼                │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│   │ Canvas 2D    │  │ Fight System │  │ Three.js     │     │
-│   │ drawScene()  │  │ fightTick()  │  │ Shop preview │     │
-│   └──────────────┘  └──────────────┘  └──────────────┘     │
-│                                                              │
+│  KONFIGURATION │ ARTDATA │ SPELSTATE                        │
+├────────────────┴─────────┴──────────────────────────────────┤
+│  FÅNGSTMOTOR (odds · bite · fight · scene tick)              │
+├─────────────────────────────────────────────────────────────┤
+│  EKONOMI │ PROGRESSION │ FISKELOGG                           │
+├─────────────────────────────────────────────────────────────┤
+│  UI (Canvas 2D + shop Three.js) │ EVENTHANTERING            │
 └─────────────────────────────────────────────────────────────┘
-         │                                    │
-         ▼                                    ▼
-   Browser APIs                         CDN: Three.js r128
-   Canvas, WebGL, Vibration            Google Fonts
 ```
 
-### 1.2 Architectural characteristics
+### 2.4 Architectural characteristics
 
 | Property | Value |
 |----------|-------|
-| Pattern | Monolithic SPA, no module bundler |
-| State | Global mutable objects (`G`, `SC`, runtime vars) |
-| Persistence | None |
-| Testing | None |
-| Build | None — static file |
-| Deployment | Any static host |
-
----
-
-## 2. System Components (Prototype)
-
-### 2.1 Application shell
-
-- **Container**: `.app` — max-width 480px, full viewport height
-- **Navigation**: Three tabs (`fiska`, `shop`, `logg`) via class toggling
-- **Persistent chrome**: Level badge, XP bar, kr, pearls
-
-### 2.2 Fishing screen components
-
-| Component | DOM ID | Role |
-|-----------|--------|------|
-| Game canvas | `#cv` | 2D scene rendering |
-| Fight HUD | `#hud` | Tension and stamina bars |
-| Reel pad | `#reelpad` | Vertical drag → reel input |
-| Action buttons | `#liftBtn`, `#strikeBtn` | Jig lift, hookset |
-| Dock | `#dock` | Odds bar, cast/setup buttons |
-| Setup panel | `#panel` | Spot, method, time chips |
-| Hint | `#fhint` | Contextual instruction text |
-| Modal | `#modal` | Catch result / line snap |
-| Toast | `#toast` | Transient feedback |
-
-### 2.3 Shop screen components
-
-| Component | Role |
-|-----------|------|
-| `#shop3d` | Three.js WebGL rod viewer |
-| `#shelf` | Horizontal equipment list with generated thumbnails |
-| `#sinfo` | Selected item stats and buy/equip CTA |
-| `#vtog` | Studio vs water view toggle |
-
-### 2.4 Game loop
-
-```javascript
-requestAnimationFrame(frame)
-  → updateScene(dt, now)   // logic, state transitions
-  → drawScene(now)           // canvas render (if fishing tab active)
-```
-
-A separate always-on loop renders the shop Three.js scene when initialized.
+| Pattern | Monolithic single-file SPA |
+| State | Global objects (`gameState`, `sceneState`) |
+| Build | None — open file in browser |
+| Purpose | Tune balance; document rules for Godot |
+| Tests | Manual playtest (no CI unit tests planned) |
 
 ---
 
 ## 3. Data Model (Prototype)
 
-### 3.1 Static configuration (immutable at runtime)
+### 3.1 Tunable constants (KONFIGURATION)
 
-| Object | Keys | Purpose |
-|--------|------|---------|
-| `SP` | species id | Names, colors, density, unlock, weights, prices, grow span |
-| `ORDER` | array | Species display/hierarchy order |
-| `METHODS` | method id | Name, unlock, boat flag, mechanic type, species multipliers |
-| `TIMES` | time id | Name, sky/water/shore colors, glitter, species multipliers |
-| `SPOTS` | spot id | Name, unlock, species multipliers |
-| `RODS` | array | Gear stats, 3D mesh parameters |
-| `SKINS` | array | Cosmetic material overrides |
-| `HAP` | species id | Haptic patterns for bite and fight |
+| Constant | JS name | Default | Role |
+|----------|---------|---------|------|
+| TAK | `BITE_CEILING` | 0.48 | Max bite probability per cast |
+| K | `ODDS_SATURATION` | 85 | Odds saturation — higher = sparser bites |
+| GOLV | `PREDATOR_LEVEL_BONUS` | 0.4 | Predator weight bonus per level |
+| CAP | `GEAR_CAP` | 25 | Max rod gear bonus (%) |
+| XP base | `XP_BASE` | 14 | Progression tempo (`14 × level^1.4`) |
 
-### 3.2 Tunable constants
+### 3.2 Static data (ARTDATA)
 
-| Constant | Default | Role |
-|----------|---------|------|
-| `TAK` | 0.48 | Bite probability ceiling |
-| `K` | 85 | Odds saturation factor |
-| `GOLV` | 0.4 | Predator level bonus per level |
-| `CAP` | 25 | Maximum rod gear bonus (%) |
+| Object | Purpose |
+|--------|---------|
+| `SPECIES` | Fish: density, unlock, weights, prices, records, growth |
+| `METHODS` | Fishing methods: mechanic type, species multipliers |
+| `TIMES` | Time of day: visuals + species multipliers |
+| `SPOTS` | Location within lake: species multipliers |
+| `RODS` / `SKINS` | Equipment and cosmetics |
+| `HAPTIC_PROFILES` | Per-species vibration patterns |
 
-### 3.3 Player state (`G`)
+### 3.3 Player state (`gameState`)
 
-```javascript
-G = {
-  level, xp, kr, pe,           // progression & currency
-  spot, method, time,          // current setup
-  rod, skin, boat,             // equipment
-  ownedRods: Set,
-  ownedSkins: Set,
-  cat, selRod, selSkin, view,  // shop UI state
-  log: { [speciesId]: LogEntry }
-}
-```
+Progression, currencies (`kronor`, `pearls`), current setup (spot, method, time), equipment, shop UI state, and per-species `log` entries (personal best, lake record, size classes, etc.).
 
-**LogEntry** per species: `count`, `pb`, `cls`, `spelRek`, `beatSpel`, `beatVerk`, `seen`.
+### 3.4 Scene state (`sceneState`)
 
-### 3.4 Scene state (`SC`)
-
-```javascript
-SC = {
-  mode,      // state machine phase
-  t,         // elapsed time
-  _nibbleAt, // fake nibble scheduler
-  _bite,     // pre-rolled bite probability for current cast
-  _wait      // mete wait timer
-}
-```
-
-### 3.5 State machine (`SC.mode`)
+State machine driven by `sceneState.mode`:
 
 ```
 ready → charging → cast → mete_wait | spin | jig
@@ -176,334 +138,189 @@ ready → charging → cast → mete_wait | spin | jig
 
 ---
 
-## 4. Rendering Pipeline (Prototype)
+## 4. Simulation Logic (Prototype)
 
-### 4.1 Canvas 2D (gameplay)
+These functions are the **primary export targets** for Phase 5 documentation.
 
-**Initialization**: `ResizeObserver` on `#cv` → `resizeScene()` → `buildStatic()`.
-
-**Static scenery** (rebuilt on resize):
-- Shoreline polygon (`SHORE`)
-- Cloud positions (`CLOUDS`)
-- Reed stalks (`REEDS`)
-
-**Per-frame** (`drawScene`):
-1. Sky gradient (from `TIMES[G.time]`)
-2. Sun/moon glow
-3. Clouds (non-night)
-4. Shore fill
-5. Water gradient + glitter
-6. Wave lines
-7. Ripples
-8. Fish, lure, fishing line
-9. Reeds and foreground bank
-10. Rod (bezier with bend)
-11. Cast preview and power meter (charging)
-12. Splash particles
-
-**Fish drawing**: Procedural 2D ellipses scaled by weight, animated by fight state.
-
-### 4.2 Three.js (shop only)
-
-- **Primary renderer**: Full rod model with grip, reel, guides, tip
-- **Thumbnail renderer**: Offscreen 120×76 PNG via `preserveDrawingBuffer`
-- **Interaction**: Pointer drag rotates `pivot` group
-- **Auto-rotate**: Studio view idle rotation after 90 frames
-
-**Version**: Three.js r128 from cdnjs (2021-era API).
-
----
-
-## 5. Input and Platform (Prototype)
-
-### 5.1 Input mapping
-
-| Input | Handler | Active when |
-|-------|---------|-------------|
-| Tab clicks | `.tab onclick` | Always |
-| Canvas pointer down/move/up | Charge-cast | `ready`, active methods |
-| Cast button | `meteCast()` | `ready`, mete |
-| Reel pad drag | `reelAccum` | spin, jig, fight |
-| Strike button | `strike()` | `bite` |
-| Lift button | `jigLift()` | `jig`, rest phase |
-| Shop canvas drag | Pivot rotation | Shop tab |
-
-### 5.2 Mobile considerations
-
-- `touch-action: none` on interactive surfaces
-- `{ passive: false }` on touch handlers to prevent scroll
-- `100dvh` viewport height
-- Vibration API with iOS screen-shake fallback
-- `prefers-reduced-motion` disables strike pulse animation
-
-### 5.3 Reel input normalization
-
-```javascript
-reelInput(dt) = clamp(reelAccum / dt / 650, 0, 1.3)
-```
-
-Vertical drag distance accumulated per frame; consumed in fight, spin, and jig modes.
-
----
-
-## 6. Simulation Logic (Prototype)
-
-### 6.1 Odds engine
+### 4.1 Odds engine
 
 **Raw weight per species:**
 ```
-raw(k) = tat(k) × method.m(k) × time.t(k) × spot.s(k) + predatorBonus(k)
-predatorBonus = rov ? level × GOLV : 0
+computeRawWeight(id) = density × methodMult × timeMult × spotMult + predatorBonus
+predatorBonus = isPredator ? level × PREDATOR_LEVEL_BONUS : 0
 ```
 
 **Bite probability:**
 ```
-sum = Σ raw(k) for available species
-bite = min(TAK, TAK × sum / (sum + K)) × (1 + 0.01 × level) × gearG()
+biteChance = min(BITE_CEILING, BITE_CEILING × sum / (sum + ODDS_SATURATION))
+             × (1 + 0.01 × level) × gearMultiplier
 ```
 
-**Quality** (for size, not frequency):
+**Setup quality** (size only, not bite frequency):
 ```
-quality(k) = currentSetupMultiplier(k) / bestPossibleMultiplier(k)
+quality(id) = currentSetupMult(id) / bestPossibleMult(id)
 ```
 
-### 6.2 Size selection
+### 4.2 Size selection
 
-Uses level growth `sizeReach(k)` and setup `quality(k)` to weight stor / bra / liten rolls. Trophy class (`stor`) gated until sufficient level growth — prevents record fish at low level.
+`pickSpeciesAndSize()` uses `computeSizeReach(id)` (level vs species `growthLevels`) and `computeSetupQuality(id)` to weight stor / bra / liten. Trophy class is gated at low level growth.
 
-### 6.3 Fight simulation
+### 4.3 Fight simulation
 
 | Variable | Behavior |
 |----------|----------|
-| `F.tension` | Rises when reeling, especially during fish runs |
-| `F.stamina` | Depletes while reeling; win at zero |
-| `F.running` | Periodic bursts; player must give line |
-| `rodBend` | Visual feedback tied to tension |
+| `fightState.tension` | Rises when reeling, especially during runs |
+| `fightState.stamina` | Depletes while reeling; win at zero |
+| `fightState.running` | Periodic bursts — player must give line |
+| Snap | `tension >= 1` |
+| Land | `stamina <= 0` → surface → rewards |
 
-**Loss**: `tension >= 1` → snap.  
-**Win**: `stamina <= 0` → surface animation → reward.
-
-### 6.4 Progression
+### 4.4 Progression
 
 ```javascript
-xpNeed(level) = round(14 × level^1.4)
+xpRequiredForLevel(level) = round(XP_BASE × level^1.4)
 ```
 
-Level factor `lf()` scales cast range, hookset window, fight ease, and contact sensitivity.
+`getLevelFactors()` scales cast range, hookset window, fight ease, and retrieve contact sensitivity.
 
 ---
 
-## 7. Known Limitations
+## 5. Rendering and Input (Prototype)
 
-| Area | Issue |
-|------|-------|
-| Architecture | Single 566-line file; no separation of concerns |
-| Persistence | All progress lost on refresh |
-| Scalability | One implicit lake; four abstract spots |
-| 3D | Gameplay entirely 2D |
-| Fish AI | Probabilistic bites; no agents or habitat |
-| Environment | Time-of-day color swap only; no weather/season/temp |
-| Boat | Flag exists; purchase flow incomplete |
-| Security | `innerHTML` for dynamic UI |
-| Dependencies | CDN Three.js without SRI; outdated version |
-| Testing | No unit or integration tests |
-| Audio | None |
-| Thumbnails | Regenerated PNG data URLs on each shelf render |
+### 5.1 Gameplay rendering
+
+**Canvas 2D** — stylized lake silhouette, not a production visual target. Used only to support feel testing (lure position, fight motion, tension feedback).
+
+### 5.2 Shop rendering
+
+**Three.js r128** (CDN) — rod preview and shelf thumbnails. Cosmetic only; **not ported to Godot as web code** — Godot will use its own 3D assets.
+
+### 5.3 Input
+
+Touch-first: reel pad, charge-cast on canvas, strike/lift buttons. Vibration API with screen-shake fallback on iOS.
+
+### 5.4 Reel input normalization
+
+```javascript
+consumeReelInput(dt) = clamp(reelAccum / dt / 650, 0, 1.3)
+```
 
 ---
 
-## 8. Target Architecture
+## 6. Known Limitations (Prototype)
 
-### 8.1 Layered production stack
+| Area | Limitation | Acceptable because |
+|------|------------|-------------------|
+| Single HTML file | No automated tests | Prototype is for manual balance tuning |
+| Canvas 2D visuals | Not representative of final game | Godot handles all 3D presentation |
+| Three.js shop | CDN dependency, extra WebGL | Shop UX reference only |
+| No fish AI agents | Probabilistic bites | Agent sim comes in Godot, guided by exported odds rules |
+| One abstract lake | Four spots, five species | Enough to validate rules before content scale |
+| Persistence | May be incomplete | localStorage sufficient for playtests |
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Game Client                           │
-│  (Unity / Unreal / Godot — TBD in Phase 3)                  │
-├─────────────────────────────────────────────────────────────┤
-│  Presentation  │  Scene graph, UI, audio, VFX, input        │
-├────────────────┼────────────────────────────────────────────┤
-│  Simulation    │  Fish AI, bite model, fight, environment    │
-├────────────────┼────────────────────────────────────────────┤
-│  Content       │  Location loader, species registry, gear    │
-├────────────────┼────────────────────────────────────────────┤
-│  Platform      │  Save/load, analytics, remote config        │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     Content & Services                       │
-├──────────────────┬──────────────────┬───────────────────────┤
-│  CDN / Storage   │  Backend API     │  Authoring Tools      │
-│  location packs  │  saves, leader-  │  lake import, species │
-│  meshes, audio   │  boards, config  │  validation pipeline  │
-└──────────────────┴──────────────────┴───────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     External Data Sources                    │
-│  SLU · SMHI · Lantmäteriet · regulation databases           │
-└─────────────────────────────────────────────────────────────┘
-```
+**Do not fix by expanding the prototype:** modular TypeScript, web 3D world, or content pipelines — those belong in Godot.
 
-### 8.2 Recommended repository layout (target)
+---
+
+## 7. Target Architecture (Godot)
+
+### 7.1 Engine and language
+
+| Choice | Decision |
+|--------|----------|
+| Engine | **Godot 4** |
+| Script | **GDScript** (C# optional for shared libs if needed later) |
+| Prototype | Remains `index.html` until Godot vertical replaces it for playtests |
+
+### 7.2 Godot project layout (initial)
 
 ```
-fiskespel/
-├── docs/                    # Project documentation
-├── packages/
-│   ├── core/                # Shared simulation logic (portable, tested)
-│   ├── client/              # Game engine project
-│   └── tools/               # Content pipeline CLI
-├── data/
-│   ├── species/
-│   ├── locations/
-│   ├── gear/
-│   ├── methods/
-│   └── regulations/
-├── assets/                  # Art, audio, engine-specific resources
-└── tests/
+fiskespel-godot/
+├── project.godot
+├── data/                    # Imported from Phase 5 JSON
+│   ├── species.json
+│   ├── methods.json
+│   ├── times.json
+│   ├── spots.json
+│   └── balance_constants.json
+├── scripts/
+│   ├── sim/                 # bite_engine.gd, fight_engine.gd, progression.gd
+│   ├── player/
+│   └── ui/
+├── scenes/
+│   ├── main.tscn
+│   ├── fishing/
+│   └── ui/
+└── assets/                  # 3D models, audio, textures
 ```
 
-### 8.3 Core services (target)
+### 7.3 Layered systems (Godot)
 
-| Service | Responsibility |
-|---------|----------------|
-| `BiteSimulator` | Port of `odds()`, `pickAndSize()` — unit tested |
-| `FightController` | Species-specific fight profiles |
-| `EnvironmentSim` | Time, season, weather, water temperature |
-| `FishPopulation` | Density and spawn rules per habitat cell |
-| `FishAgent` | Individual fish state and behavior |
-| `ProgressionService` | XP, unlocks, records |
-| `ContentLoader` | Stream location packs from CDN |
-| `SaveService` | Local + cloud persistence |
+```
+Presentation   — 3D scene, camera, UI, audio, VFX
+Simulation     — Bite, fight, progression (from Phase 5 specs)
+Content        — Species, locations, gear (data files)
+Platform       — Save/load, analytics (later)
+```
 
-### 8.4 Spatial model (target)
+Long-term vision (many Swedish locations, SMHI/SLU data, weather) is implemented **in Godot**, not by growing the HTML prototype.
+
+### 7.4 Spatial model (future Godot content)
 
 ```
 Region
   └── WaterBody (lake | river | coastal)
-        └── SubArea (bay, stretch, depth zone)
-              └── HabitatCell (grid or navmesh polygon)
-                    └── tags: vass, rev, djup, open_water, ...
+        └── SubArea
+              └── HabitatCell (tags: vass, rev, djup, open_water, …)
 ```
 
-Prototype spots map directly to **habitat tags** on spatial cells.
+Prototype `SPOTS` map to habitat tags when content work begins in Godot.
 
 ---
 
-## 9. Target Data Schema
+## 8. Rule Export Format (Phase 5)
 
-### 9.1 Species definition (JSON)
+Phase 5 produces documentation and data **outside** `index.html`:
 
-```json
-{
-  "id": "perca_fluviatilis",
-  "nameSv": "Abborre",
-  "nameLatin": "Perca fluviatilis",
-  "predator": true,
-  "baseDensity": 0.30,
-  "unlockLevel": 1,
-  "weightClasses": {
-    "liten": [0.05, 0.2],
-    "bra": [0.2, 0.7],
-    "stor": [0.7, 2.5]
-  },
-  "realRecordKg": 2.6,
-  "sellPricePerKg": 18,
-  "growthLevels": 28,
-  "behaviorProfile": "perch_aggressive",
-  "methodAffinity": { "mete": 1.5, "spinn": 1.8, "vertikal": 1.6, "troll": 0.6 }
-}
-```
+| Artifact | Contents |
+|----------|----------|
+| `docs/specs/bite_engine.md` | Formulas, inputs, outputs, examples |
+| `docs/specs/fight_engine.md` | Tension, stamina, runs, species profiles |
+| `docs/specs/progression.md` | XP curve, unlocks, level factors |
+| `docs/specs/state_machine.md` | Mode transitions |
+| `docs/balance/constants.json` | All tunable numbers |
+| `docs/balance/*.json` | Species, methods, times, spots tables |
 
-### 9.2 Location definition (JSON)
-
-```json
-{
-  "id": "munksjon",
-  "nameSv": "Munksjön",
-  "type": "lake",
-  "region": "SE-F",
-  "centroid": [14.156, 57.782],
-  "boundsGeoJson": "…",
-  "bathymetryRef": "munksjon_depth.tif",
-  "habitats": ["vass", "open_water", "rock_reef", "deep_edge"],
-  "speciesPopulation": [
-    { "speciesId": "perca_fluviatilis", "density": 0.30, "source": "SLU" }
-  ],
-  "accessModes": ["shore", "boat"],
-  "regulationsRef": "se-freshwater-default"
-}
-```
-
-### 9.3 Environment state (runtime)
-
-```json
-{
-  "timeOfDay": "skymning",
-  "season": "host",
-  "airTempC": 12,
-  "waterTempC": 14,
-  "windMs": 3.5,
-  "cloudCover": 0.6,
-  "precipitation": "none",
-  "moonPhase": 0.25,
-  "iceCover": 0
-}
-```
-
-Each field feeds multiplier tables — extending the prototype's `TIMES` pattern.
+Godot reads JSON/resources; it does **not** embed or transpile the prototype script.
 
 ---
 
-## 10. Technology Recommendations
+## 9. Migration Mapping: Prototype → Godot
 
-| Concern | Recommendation | Notes |
-|---------|----------------|-------|
-| Game engine | **Unity (URP)** or **Unreal Engine 5** | Water plugins, GIS tooling, multi-platform |
-| Lightweight alternative | **Godot 4** | Lower overhead; fewer water/GIS middleware options |
-| Web-only path | **Three.js + TypeScript + Vite** | Viable for simplified 3D; harder at scale |
-| Simulation core | **TypeScript or C#** shared library | Extract and test before engine binding |
-| Backend | **Supabase** or **Firebase** | Auth, cloud saves, remote config |
-| Spatial data | **PostGIS** + GeoJSON export | Lake boundaries, query by region |
-| Content delivery | **CDN** (Cloudflare R2, S3) | Location packs, lazy loading |
-| CI/CD | **GitHub Actions** | Build, test, deploy content packs |
+| Prototype (concept) | Godot destination |
+|---------------------|-------------------|
+| `computeBiteOdds()`, `pickSpeciesAndSize()` | `scripts/sim/bite_engine.gd` |
+| `tickFight()`, haptic profiles | `scripts/sim/fight_engine.gd` |
+| `grantXp()`, `getLevelFactors()` | `scripts/sim/progression.gd` |
+| `sceneState.mode` transitions | `scripts/sim/fishing_state.gd` |
+| `SPECIES`, `METHODS`, etc. | `data/*.json` → Godot Resources |
+| Canvas `drawFishingScene` | 3D scene + camera (new implementation) |
+| Three.js shop rod | Godot 3D preview scene |
+| Tab UI / Swedish copy | Godot Control nodes — reuse text, not DOM |
 
-**Decision gate**: Engine choice is finalized in Phase 3 after a one-week technical spike on water rendering and shore casting.
-
----
-
-## 11. Migration Mapping
-
-| Prototype artifact | Target destination |
-|--------------------|-------------------|
-| `SP`, `ORDER` | `data/species/*.json` |
-| `METHODS` | `data/methods/*.json` + animation controllers |
-| `TIMES` | Environment sim diurnal/season tables |
-| `SPOTS` | Habitat tags on spatial grid |
-| `RODS`, `SKINS` | `data/gear/` + 3D asset references |
-| `odds()`, `raw()`, `quality()` | `BiteSimulator` (unit tested) |
-| `pickAndSize()` | `CatchResolver` |
-| `fightTick()` | `FightController` + species profiles |
-| `gainXP()`, `lf()` | `ProgressionService` |
-| `drawScene()` | Reference for mood/color; replaced by 3D |
-| Three.js `buildRod()` | GLTF modular rod system |
-| Shop UI flow | Retained UX pattern on new renderer |
-| `HAP` haptics | Platform haptics + audio layer |
-| Tab navigation | Engine UI framework or retained web shell |
+**Migration principle:** Reimplement behavior from **specs**, not copy-paste JavaScript.
 
 ---
 
-## Appendix: External Dependencies (Prototype)
+## Appendix: External Dependencies (Prototype Only)
 
-| Dependency | Source | Version |
-|------------|--------|---------|
-| Three.js | cdnjs.cloudflare.com | r128 |
-| Fraunces | Google Fonts | variable |
-| Inter | Google Fonts | 400–700 |
-| IBM Plex Mono | Google Fonts | 500–600 |
+| Dependency | Source | Used for |
+|------------|--------|----------|
+| Three.js r128 | cdnjs | Shop rod preview only |
+| Google Fonts | fonts.googleapis.com | UI typography |
+
+These dependencies do not carry over to Godot.
 
 ---
 
-*Last updated: June 2025 — reflects prototype at initial commit and planned target architecture.*
+*Last updated: June 2025 — HTML prototype for balance; Godot 4 for production.*
