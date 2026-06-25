@@ -131,6 +131,14 @@
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .fhint{position:absolute;left:0;right:0;bottom:128px;z-index:6;text-align:center;font-size:12px;color:var(--ink);text-shadow:0 1px 4px #000;pointer-events:none}
   @media (prefers-reduced-motion:reduce){.la.strike{animation:none}}
+  /* === DEBUG-PANEL START (ta bort hela detta block före release) === */
+  #dbgpanel{position:fixed;top:8px;right:8px;z-index:9999;font-family:inherit}
+  #dbgToggle{background:#b3261e;color:#fff;border:0;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.45)}
+  #dbgBody{display:none;flex-direction:column;gap:4px;margin-top:4px;background:rgba(10,16,20,.94);border:1px solid #b3261e;border-radius:8px;padding:6px;min-width:128px}
+  #dbgpanel.open #dbgBody{display:flex}
+  #dbgBody button{background:#1c2a32;color:#e6f0f0;border:1px solid #2f4651;border-radius:6px;padding:6px 8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;text-align:left}
+  #dbgBody button:hover{background:#274050}
+  /* === DEBUG-PANEL SLUT === */
 </style>
 
 <div class="app" id="app">
@@ -170,7 +178,7 @@
     </section>
     <section class="screen scroll" id="s-shop">
       <div class="shopwrap">
-        <div class="stabs"><button class="stab" aria-selected="true" data-c="rods">Spön</button><button class="stab" aria-selected="false" data-c="baits">Bete</button><button class="stab" aria-selected="false" data-c="skins">Skins</button></div>
+        <div class="stabs"><button class="stab" aria-selected="true" data-c="rods">Spön</button><button class="stab" aria-selected="false" data-c="baits">Bete</button><button class="stab" aria-selected="false" data-c="boat">Båt</button><button class="stab" aria-selected="false" data-c="skins">Skins</button></div>
         <div class="hero" id="hero"><div class="wbg"></div><canvas id="shop3d"></canvas><div class="heq" id="heq">✓ Utrustad</div>
           <div class="vtog" id="vtog"><button data-v="studio" aria-pressed="true">Studio</button><button data-v="water" aria-pressed="false">Vid vattnet</button></div></div>
         <div class="sinfo" id="sinfo"></div>
@@ -184,6 +192,20 @@
   <div class="modal" id="modal"><div class="card" id="mcard"></div></div>
   <div class="toast" id="toast"></div>
 </div>
+
+<!-- === DEBUG-PANEL START (ta bort hela detta block före release) === -->
+<div id="dbgpanel">
+  <button id="dbgToggle" type="button">🛠 Debug</button>
+  <div id="dbgBody">
+    <button type="button" data-dbg="lvl1">+1 level</button>
+    <button type="button" data-dbg="lvl5">+5 levels</button>
+    <button type="button" data-dbg="kr1000">+1000 kr</button>
+    <button type="button" data-dbg="kr5000">+5000 kr</button>
+    <button type="button" data-dbg="unlock">Lås upp allt</button>
+    <button type="button" data-dbg="reset">Återställ spelet</button>
+  </div>
+</div>
+<!-- === DEBUG-PANEL SLUT === -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -215,23 +237,28 @@ const ROD_PRICES        = { start: 0, bettre_met: 150, spinn: 400, vertikal: 120
 /* SPÖN — egen maxkastlängd, normaliserad 0..1 (startspöt kortast, båt-spöna längst). */
 const ROD_CAST_MAX      = { start: 0.55, bettre_met: 0.70, spinn: 0.85, vertikal: 1.00, trolling: 1.00 };
 
-/* BETE — mjukt tak för hur mycket bete får påverka fångsten (aldrig avgörande). */
-const BAIT_BIAS_CAP = 0.15;        /* ±15 % max effekt på artvikt */
+/* BETE — mjukt tak för hur mycket bete får påverka artfördelningen (aldrig avgörande). */
+const BAIT_BIAS_CAP = 0.10;        /* ±10 % max förskjutning av artvikt */
 /* BETE — pris i kronor (metodens startbete är gratis). */
 const BAIT_PRICES = { mask: 0, maggot: 40, majs: 60, jigg: 0, spinnare: 120, wobbler: 200, vertikaljigg: 0, pirk: 160, trollingwobbler: 0 };
-/* BETE — rå artbias per bete. Klampas mot BAIT_BIAS_CAP i fångstmodellen,
-   så värden utanför [1-cap, 1+cap] kapas automatiskt. */
+/* BETE — artbias per bete. Alla värden hålls inom [0.90, 1.10] så inget kapas av
+   taket; varje bete ger en tydlig men liten styrning mot sin målart. */
 const BAIT_SPECIES_BIAS = {
-  mask:            { mort: 1.15, abborre: 1.05, braxen: 1.15, gadda: 0.95, gos: 0.95 },
-  maggot:          { mort: 1.20, abborre: 1.10, braxen: 1.10, gadda: 0.90, gos: 0.90 },
-  majs:            { mort: 1.10, abborre: 0.95, braxen: 1.25, gadda: 0.90, gos: 0.90 },
-  jigg:            { mort: 0.90, abborre: 1.20, braxen: 0.90, gadda: 1.10, gos: 1.15 },
-  spinnare:        { mort: 0.90, abborre: 1.20, braxen: 0.90, gadda: 1.15, gos: 1.05 },
-  wobbler:         { mort: 0.85, abborre: 1.05, braxen: 0.85, gadda: 1.25, gos: 1.20 },
-  vertikaljigg:    { mort: 0.90, abborre: 1.15, braxen: 0.90, gadda: 1.10, gos: 1.20 },
-  pirk:            { mort: 0.90, abborre: 1.10, braxen: 0.90, gadda: 1.15, gos: 1.20 },
-  trollingwobbler: { mort: 0.85, abborre: 1.00, braxen: 0.85, gadda: 1.25, gos: 1.25 },
+  mask:            { mort: 1.10, abborre: 1.05, braxen: 1.10, gadda: 0.92, gos: 0.92 },
+  maggot:          { mort: 1.10, abborre: 1.08, braxen: 1.05, gadda: 0.92, gos: 0.92 },
+  majs:            { mort: 1.05, abborre: 0.95, braxen: 1.10, gadda: 0.92, gos: 0.92 },
+  jigg:            { mort: 0.92, abborre: 1.10, braxen: 0.92, gadda: 1.05, gos: 1.06 },
+  spinnare:        { mort: 0.92, abborre: 1.10, braxen: 0.92, gadda: 1.08, gos: 1.02 },
+  wobbler:         { mort: 0.90, abborre: 1.02, braxen: 0.90, gadda: 1.10, gos: 1.08 },
+  vertikaljigg:    { mort: 0.92, abborre: 1.06, braxen: 0.92, gadda: 1.04, gos: 1.10 },
+  pirk:            { mort: 0.92, abborre: 1.04, braxen: 0.92, gadda: 1.06, gos: 1.10 },
+  trollingwobbler: { mort: 0.90, abborre: 1.00, braxen: 0.90, gadda: 1.10, gos: 1.10 },
 };
+
+/* BÅT — level då båten SYNS/går att köpa i shoppen, samt pris i kronor.
+   När båten ägs blir vertikal- och trollingspöna (som kräver båt) användbara. */
+const BOAT_UNLOCK_LEVEL = 15;
+const BOAT_PRICE = 2500;
 
 const XP_BASE = 14;               /* Huvudreglage för leveltempo (höj = långsammare) */
 const LEVEL_SKILL_SPAN = 19;      /* Antal level till full skicklighet (lf) */
@@ -328,6 +355,9 @@ const SKINS = [
   { id: 'brass',    name: 'Mässing',    description: 'Polerad mässing.',         price: 40, col: 0xc98a3a,   metal: 0.9,  rough: 0.2 },
 ];
 
+/* BÅT — enstaka köp. unlockLevel/price läses från platshållarna i KONFIGURATION. */
+const BOAT = { id: 'boat', name: 'Båt', description: 'Tar dig ut på vattnet. Krävs för vertikal- och trollingspö.', unlockLevel: BOAT_UNLOCK_LEVEL, price: BOAT_PRICE };
+
 /* =============================================================================
    SPELSTATE
    Spelarens progress, val, samt runtime-state för fiskescenen.
@@ -336,7 +366,7 @@ const SKINS = [
 const gameState = {
   level: 1, xp: 0, kronor: 0, pearls: 0,
   spot: 'oppet', method: 'mete', time: 'skym',
-  rod: 'start', skin: 'standard', boat: false,
+  rod: 'start', skin: 'standard', ownedBoat: false,
   ownedRods: new Set(['start']),
   ownedSkins: new Set(['standard']),
   /* Startkit: startspö + mask. Övriga beten saknas tills de köps. */
@@ -410,15 +440,18 @@ function methodRodName(methodId) {
   const r = RODS.find(rod => rod.methods.includes(methodId));
   return r ? r.name : 'rätt spö';
 }
+/* Räknas spelaren som att ha båt? (äger den köpta båten). */
+function hasBoat() { return gameState.ownedBoat; }
 /* Metod tillgänglig = man äger ett spö som stödjer den, och har båt om spöt kräver det. */
 function isMethodAvailable(methodId) {
   return RODS.some(r =>
     gameState.ownedRods.has(r.id) &&
     r.methods.includes(methodId) &&
-    (!r.requiresBoat || gameState.boat));
+    (!r.requiresBoat || hasBoat()));
 }
-/* Spöt syns/går att köpa när spelaren nått dess unlockLevel. */
+/* Spöt/båten syns och går att köpa när spelaren nått sin unlockLevel. */
 function isRodUnlocked(rod) { return gameState.level >= rod.unlockLevel; }
+function isBoatUnlocked() { return gameState.level >= BOAT.unlockLevel; }
 /* Utrusta automatiskt det ägda spö med längst kast som stödjer metoden. */
 function equipRodForMethod(methodId) {
   const candidates = RODS.filter(r => gameState.ownedRods.has(r.id) && r.methods.includes(methodId));
@@ -463,14 +496,14 @@ function getLevelFactors() {
    Nappchans, artval, storleksdragning, kvalitet, kast, fight och scenuppdatering.
    ============================================================================= */
 
-/** Råvikt för en art givet nuvarande upplägg (metod × tid × plats × täthet). */
+/** Basråvikt för en art givet upplägg (metod × tid × plats × täthet). UTAN bete —
+    denna summa styr nappfrekvensen, som betet alltså aldrig påverkar. */
 function computeRawWeight(speciesId) {
   const sp = SPECIES[speciesId];
   const methodMult = METHODS[gameState.method].speciesMult[speciesId];
   const timeMult = TIMES[gameState.time].speciesMult[speciesId];
   const spotMult = SPOTS[gameState.spot].speciesMult[speciesId];
-  /* Bete = mjuk extra multiplikator (takad i getBaitMultiplier). */
-  let weight = sp.density * methodMult * timeMult * spotMult * getBaitMultiplier(speciesId);
+  let weight = sp.density * methodMult * timeMult * spotMult;
   if (sp.isPredator) weight += gameState.level * PREDATOR_LEVEL_BONUS;
   return weight;
 }
@@ -496,13 +529,18 @@ function computeSetupQuality(speciesId) {
   return best > 0 ? Math.min(1, current / best) : 0;
 }
 
-/** Beräknar nappchans och artfördelning för aktuellt upplägg. */
+/** Beräknar nappchans och artfördelning för aktuellt upplägg.
+    Nappfrekvensen baseras på basvikterna (utan bete). Betet biaserar ENBART
+    artfördelningen (rawWeights/sum), så total fångstmängd ändras aldrig. */
 function computeBiteOdds() {
   const available = getAvailableSpecies();
-  const rawWeights = available.map(id => ({ id, weight: computeRawWeight(id) }));
-  const sum = rawWeights.reduce((acc, o) => acc + o.weight, 0);
-  let biteChance = BITE_CEILING * sum / (sum + ODDS_SATURATION);
+  /* Basvikter utan bete → nappfrekvens. */
+  const baseSum = available.reduce((acc, id) => acc + computeRawWeight(id), 0);
+  let biteChance = BITE_CEILING * baseSum / (baseSum + ODDS_SATURATION);
   biteChance = Math.min(BITE_CEILING, biteChance * (1 + 0.01 * gameState.level) * getGearMultiplier());
+  /* Betesviktade vikter → endast vilken art man får. */
+  const rawWeights = available.map(id => ({ id, weight: computeRawWeight(id) * getBaitMultiplier(id) }));
+  const sum = rawWeights.reduce((acc, o) => acc + o.weight, 0);
   return { rawWeights, sum, biteChance };
 }
 
@@ -988,6 +1026,17 @@ function handleShopAction(action) {
       showToast(bait.name + ' valt');
     }
     if (gameState.method === bait.method) renderOddsBar();
+  } else if (gameState.shopCategory === 'boat') {
+    if (action === 'buy' && !gameState.ownedBoat) {
+      if (!isBoatUnlocked()) return;                    /* låst av level */
+      if (gameState.kronor >= BOAT.price) {
+        gameState.kronor -= BOAT.price;
+        gameState.ownedBoat = true;
+        renderSetupChips();                             /* båt-metoder kan nu bli valbara */
+        renderOddsBar();
+        showToast(BOAT.name + ' köpt!');
+      }
+    }
   } else {
     const skin = SKINS.find(s => s.id === gameState.selSkin);
     if (action === 'buy') {
@@ -1650,8 +1699,8 @@ function setShopView(viewId) {
 }
 
 function getShopSelection() {
-  /* Bete har ingen egen 3D-modell — visa utrustat spö i hero. */
-  if (gameState.shopCategory === 'baits') {
+  /* Bete och båt har ingen egen 3D-modell — visa utrustat spö i hero. */
+  if (gameState.shopCategory === 'baits' || gameState.shopCategory === 'boat') {
     return { rod: getRodById(gameState.rod), skin: SKINS.find(s => s.id === gameState.skin) };
   }
   return {
@@ -1668,7 +1717,9 @@ function renderShopHero() {
     ? gameState.selRod === gameState.rod
     : gameState.shopCategory === 'baits'
       ? gameState.bait[BAITS[gameState.selBait].method] === gameState.selBait
-      : gameState.selSkin === gameState.skin;
+      : gameState.shopCategory === 'boat'
+        ? gameState.ownedBoat
+        : gameState.selSkin === gameState.skin;
   getEl('heq').classList.toggle('on', isEquipped);
   getEl('hero').classList.toggle('water', gameState.view === 'water');
 }
@@ -1736,9 +1787,21 @@ function renderShopInfo() {
     info.innerHTML = `
       <div class="nm">${bait.name}</div>
       <div class="ds">För ${METHODS[bait.method].name}.</div>
-      <div class="cnote"><b>Mjuk bias.</b> Bete gör att vissa arter nappar lite oftare — takat vid ±${capPct}%, aldrig avgörande.</div>
+      <div class="cnote"><b>Mjuk bias.</b> Bete förskjuter <b>vilken art</b> du får — takat vid ±${capPct}%. Det ändrar aldrig hur ofta det nappar.</div>
       ${methodOwned ? buildBaitCtaHtml(bait, owned, equipped)
         : `<div class="scta"><span class="sprice">Låst</span><button class="sbuy cant" disabled>Kräver ${methodRodName(bait.method)}</button></div>`}`;
+  } else if (gameState.shopCategory === 'boat') {
+    const owned = gameState.ownedBoat;
+    const unlocked = isBoatUnlocked();
+    let cta;
+    if (!unlocked) cta = buildLockedCtaHtml(BOAT.unlockLevel);
+    else if (owned) cta = '<div class="scta"><span class="sprice free">Ägd</span><button class="sbuy equipped" disabled>✓ Ägd</button></div>';
+    else cta = buildShopCtaHtml(BOAT.price, 'kr', false, false);
+    info.innerHTML = `
+      <div class="nm">${BOAT.name}</div>
+      <div class="ds">${BOAT.description}</div>
+      <div class="ptag">Låser upp <b>vertikalfiske</b> och <b>trolling</b> (med rätt spö).</div>
+      ${cta}`;
   } else {
     const skin = SKINS.find(s => s.id === gameState.selSkin);
     const owned = gameState.ownedSkins.has(skin.id);
@@ -1777,6 +1840,12 @@ function renderShelf() {
     isLocked = it => !ownsRodForMethod(it.method);
     lockLabel = () => 'Kräver spö';
     priceLabel = it => BAIT_PRICES[it.id] === 0 ? 'Gratis' : BAIT_PRICES[it.id].toLocaleString('sv-SE') + ' kr';
+  } else if (cat === 'boat') {
+    list = [BOAT]; selected = BOAT.id;
+    isOwned = () => gameState.ownedBoat;
+    isLocked = () => !isBoatUnlocked();
+    lockLabel = it => 'Lvl ' + it.unlockLevel;
+    priceLabel = it => it.price.toLocaleString('sv-SE') + ' kr';
   } else {
     list = SKINS; selected = gameState.selSkin;
     isOwned = it => gameState.ownedSkins.has(it.id);
@@ -1795,14 +1864,14 @@ function renderShelf() {
     div.onclick = () => {
       if (cat === 'rods') gameState.selRod = item.id;
       else if (cat === 'baits') gameState.selBait = item.id;
-      else gameState.selSkin = item.id;
+      else if (cat === 'skins') gameState.selSkin = item.id;
       renderShopHero();
       renderShopInfo();
       renderShelf();
     };
     shelf.appendChild(div);
-    /* Bete saknar 3D-modell — endast spön/skins får miniatyrbild. */
-    if (cat !== 'baits') {
+    /* Bete och båt saknar 3D-modell — endast spön/skins får miniatyrbild. */
+    if (cat === 'rods' || cat === 'skins') {
       const rod = cat === 'rods' ? item : getRodById(gameState.rod);
       const skin = cat === 'skins' ? item : SKINS.find(s => s.id === gameState.skin);
       const url = getRodThumbnailUrl(rod, skin);
@@ -1989,6 +2058,92 @@ function initGame() {
 
 initGame();
 
+// === DEBUG-PANEL START (ta bort hela detta block före release) ===
+(function setupDebugPanel() {
+  const panel = getEl('dbgpanel');
+  if (!panel) return;
+
+  /* Kör spelets egna omritningar efter en debug-ändring. */
+  function debugRefreshAll() {
+    updateStatusBar();
+    renderSetupChips();
+    renderOddsBar();
+    renderCatchLog();
+    renderShelf();
+    renderShopHero();
+    renderShopInfo();
+    if (sceneState.mode === 'ready') resetToReady();
+  }
+
+  /* Höj level n steg via spelets egen grantXp (så levelup-toaster/upplåsningar körs). */
+  function debugAddLevels(n) {
+    for (let i = 0; i < n; i++) grantXp(xpRequiredForLevel(gameState.level) - gameState.xp);
+    debugRefreshAll();
+  }
+
+  function debugAddKronor(n) {
+    gameState.kronor += n;
+    debugRefreshAll();
+  }
+
+  /* Lås upp alla spön, bete och båt (samt höj level så allt syns i shoppen). */
+  function debugUnlockAll() {
+    if (gameState.level < BOAT.unlockLevel) gameState.level = BOAT.unlockLevel;
+    RODS.forEach(r => gameState.ownedRods.add(r.id));
+    BAIT_ORDER.forEach(id => gameState.ownedBaits.add(id));
+    for (const methodId in gameState.bait) {
+      if (!gameState.bait[methodId]) {
+        const def = BAIT_ORDER.find(id => BAITS[id].method === methodId && BAITS[id].methodDefault);
+        if (def) gameState.bait[methodId] = def;
+      }
+    }
+    gameState.ownedBoat = true;
+    showToast('Debug: allt upplåst');
+    debugRefreshAll();
+  }
+
+  /* Nollställ till startkit (startspö + mask) och töm loggen. */
+  function debugResetGame() {
+    Object.assign(gameState, {
+      level: 1, xp: 0, kronor: 0, pearls: 0,
+      spot: 'oppet', method: 'mete', time: 'skym',
+      rod: 'start', skin: 'standard', ownedBoat: false,
+      ownedRods: new Set(['start']),
+      ownedSkins: new Set(['standard']),
+      ownedBaits: new Set(['mask']),
+      bait: { mete: 'mask', spinn: null, vert: null, troll: null },
+      shopCategory: 'rods', selRod: 'start', selSkin: 'standard', selBait: 'mask',
+      view: 'studio',
+    });
+    SPECIES_ORDER.forEach(id => {
+      gameState.log[id] = {
+        count: 0,
+        personalBest: 0,
+        sizeClasses: { liten: 0, bra: 0, stor: 0 },
+        lakeRecord: +(SPECIES[id].realRecordKg * 0.7).toFixed(2),
+        beatLakeRecord: false,
+        beatRealRecord: false,
+        seen: false,
+      };
+    });
+    showToast('Debug: spelet återställt');
+    debugRefreshAll();
+  }
+
+  const actions = {
+    lvl1: () => debugAddLevels(1),
+    lvl5: () => debugAddLevels(5),
+    kr1000: () => debugAddKronor(1000),
+    kr5000: () => debugAddKronor(5000),
+    unlock: debugUnlockAll,
+    reset: debugResetGame,
+  };
+  panel.querySelectorAll('[data-dbg]').forEach(btn => {
+    btn.onclick = () => { const fn = actions[btn.dataset.dbg]; if (fn) fn(); };
+  });
+  getEl('dbgToggle').onclick = () => panel.classList.toggle('open');
+})();
+// === DEBUG-PANEL SLUT ===
 
 });
 </script>
