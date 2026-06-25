@@ -163,13 +163,14 @@
       <div class="panel" id="panel">
         <h4>Plats</h4><div class="chips" id="spots"></div>
         <h4>Metod</h4><div class="chips" id="methods"></div>
+        <h4>Bete</h4><div class="chips" id="baits"></div>
         <h4>Tid på dygnet</h4><div class="chips" id="times"></div>
         <button class="done" id="doneBtn">Klar</button>
       </div>
     </section>
     <section class="screen scroll" id="s-shop">
       <div class="shopwrap">
-        <div class="stabs"><button class="stab" aria-selected="true" data-c="rods">Spön</button><button class="stab" aria-selected="false" data-c="skins">Skins</button></div>
+        <div class="stabs"><button class="stab" aria-selected="true" data-c="rods">Spön</button><button class="stab" aria-selected="false" data-c="baits">Bete</button><button class="stab" aria-selected="false" data-c="skins">Skins</button></div>
         <div class="hero" id="hero"><div class="wbg"></div><canvas id="shop3d"></canvas><div class="heq" id="heq">✓ Utrustad</div>
           <div class="vtog" id="vtog"><button data-v="studio" aria-pressed="true">Studio</button><button data-v="water" aria-pressed="false">Vid vattnet</button></div></div>
         <div class="sinfo" id="sinfo"></div>
@@ -202,6 +203,35 @@ const BITE_CEILING = 0.48;        /* TAK — max nappsannolikhet per kast */
 const ODDS_SATURATION = 85;       /* K — högre = glesare napp vid samma upplägg */
 const PREDATOR_LEVEL_BONUS = 0.4; /* GOLV — rovfisk får extra vikt per level */
 const GEAR_CAP = 25;              /* Max rod-bonus i procent */
+
+/* ############################################################################
+   PLATSHÅLLARE — SPÖ & BETE (kalibreras senare, ändra fritt här)
+   ############################################################################ */
+
+/* SPÖN — level då spöt SYNS och går att köpa i shoppen. */
+const ROD_UNLOCK_LEVELS = { start: 1, bettre_met: 2, spinn: 3, vertikal: 15, trolling: 15 };
+/* SPÖN — pris i kronor (startspöt ingår gratis i startkitet). */
+const ROD_PRICES        = { start: 0, bettre_met: 150, spinn: 400, vertikal: 1200, trolling: 1600 };
+/* SPÖN — egen maxkastlängd, normaliserad 0..1 (startspöt kortast, båt-spöna längst). */
+const ROD_CAST_MAX      = { start: 0.55, bettre_met: 0.70, spinn: 0.85, vertikal: 1.00, trolling: 1.00 };
+
+/* BETE — mjukt tak för hur mycket bete får påverka fångsten (aldrig avgörande). */
+const BAIT_BIAS_CAP = 0.15;        /* ±15 % max effekt på artvikt */
+/* BETE — pris i kronor (metodens startbete är gratis). */
+const BAIT_PRICES = { mask: 0, maggot: 40, majs: 60, jigg: 0, spinnare: 120, wobbler: 200, vertikaljigg: 0, pirk: 160, trollingwobbler: 0 };
+/* BETE — rå artbias per bete. Klampas mot BAIT_BIAS_CAP i fångstmodellen,
+   så värden utanför [1-cap, 1+cap] kapas automatiskt. */
+const BAIT_SPECIES_BIAS = {
+  mask:            { mort: 1.15, abborre: 1.05, braxen: 1.15, gadda: 0.95, gos: 0.95 },
+  maggot:          { mort: 1.20, abborre: 1.10, braxen: 1.10, gadda: 0.90, gos: 0.90 },
+  majs:            { mort: 1.10, abborre: 0.95, braxen: 1.25, gadda: 0.90, gos: 0.90 },
+  jigg:            { mort: 0.90, abborre: 1.20, braxen: 0.90, gadda: 1.10, gos: 1.15 },
+  spinnare:        { mort: 0.90, abborre: 1.20, braxen: 0.90, gadda: 1.15, gos: 1.05 },
+  wobbler:         { mort: 0.85, abborre: 1.05, braxen: 0.85, gadda: 1.25, gos: 1.20 },
+  vertikaljigg:    { mort: 0.90, abborre: 1.15, braxen: 0.90, gadda: 1.10, gos: 1.20 },
+  pirk:            { mort: 0.90, abborre: 1.10, braxen: 0.90, gadda: 1.15, gos: 1.20 },
+  trollingwobbler: { mort: 0.85, abborre: 1.00, braxen: 0.85, gadda: 1.25, gos: 1.25 },
+};
 
 const XP_BASE = 14;               /* Huvudreglage för leveltempo (höj = långsammare) */
 const LEVEL_SKILL_SPAN = 19;      /* Antal level till full skicklighet (lf) */
@@ -265,12 +295,31 @@ const SPOTS = {
   djup:  { name: 'Djupkant',      unlockLevel: 5, speciesMult: { mort: 0.5, abborre: 1.2, braxen: 0.4, gadda: 1.3, gos: 1.9 } },
 };
 
+/* SPÖN (i ordning). methods = vilka metoder spöt låser upp. requiresBoat = kräver båt.
+   unlockLevel/price/castMax läses från platshållarna högst upp i KONFIGURATION.
+   len/taper/guides/blank/metal/rough används endast av 3D-modellen i shoppen. */
 const RODS = [
-  { id: 'start',    name: 'Startspö',    description: 'Det du börjar med.',       price: 0,    gear: 0,  len: 3.6, taper: 0.085, guides: 4, blank: 0x6e5236, metal: 0.15, rough: 0.85 },
-  { id: 'allround', name: 'Allroundspö', description: 'Stabilt val.',             price: 200,  gear: 10, len: 3.9, taper: 0.07,  guides: 5, blank: 0x2a3a44, metal: 0.35, rough: 0.55 },
-  { id: 'match',    name: 'Match Pro',   description: 'Känsligt och snabbt.',     price: 600,  gear: 18, len: 4.2, taper: 0.055, guides: 6, blank: 0x14323d, metal: 0.5,  rough: 0.4 },
-  { id: 'predator', name: 'Predator XT', description: 'Når takets +25%.',         price: 1400, gear: 25, len: 4.4, taper: 0.05,  guides: 7, blank: 0x101820, metal: 0.7,  rough: 0.3 },
+  { id: 'start',      name: 'Startspö',      description: 'Ingår i startkitet. Kortast kast, endast mete.', methods: ['mete'],  requiresBoat: false, unlockLevel: ROD_UNLOCK_LEVELS.start,      price: ROD_PRICES.start,      castMax: ROD_CAST_MAX.start,      len: 3.6, taper: 0.085, guides: 4, blank: 0x6e5236, metal: 0.15, rough: 0.85 },
+  { id: 'bettre_met', name: 'Bättre metspö', description: 'Mete med något längre kast.',                    methods: ['mete'],  requiresBoat: false, unlockLevel: ROD_UNLOCK_LEVELS.bettre_met, price: ROD_PRICES.bettre_met, castMax: ROD_CAST_MAX.bettre_met, len: 3.9, taper: 0.07,  guides: 5, blank: 0x2a3a44, metal: 0.35, rough: 0.55 },
+  { id: 'spinn',      name: 'Spinnspö',      description: 'Låser upp spinnfiske. Längre kast.',            methods: ['spinn'], requiresBoat: false, unlockLevel: ROD_UNLOCK_LEVELS.spinn,      price: ROD_PRICES.spinn,      castMax: ROD_CAST_MAX.spinn,      len: 4.2, taper: 0.055, guides: 6, blank: 0x14323d, metal: 0.5,  rough: 0.4 },
+  { id: 'vertikal',   name: 'Vertikalspö',   description: 'Vertikalfiske från båt.',                       methods: ['vert'],  requiresBoat: true,  unlockLevel: ROD_UNLOCK_LEVELS.vertikal,   price: ROD_PRICES.vertikal,   castMax: ROD_CAST_MAX.vertikal,   len: 2.2, taper: 0.05,  guides: 6, blank: 0x101820, metal: 0.6,  rough: 0.35 },
+  { id: 'trolling',   name: 'Trollingspö',   description: 'Trolling från båt. Längst räckvidd.',           methods: ['troll'], requiresBoat: true,  unlockLevel: ROD_UNLOCK_LEVELS.trolling,   price: ROD_PRICES.trolling,   castMax: ROD_CAST_MAX.trolling,   len: 4.6, taper: 0.05,  guides: 7, blank: 0x1a1410, metal: 0.7,  rough: 0.3 },
 ];
+
+/* BETE per metod. methodDefault = metodens gratisbete (fås när spöt köps).
+   Multiplikatorvärden ligger i BAIT_SPECIES_BIAS (KONFIGURATION). */
+const BAITS = {
+  mask:            { id: 'mask',            name: 'Mask',            method: 'mete',  methodDefault: true },
+  maggot:          { id: 'maggot',          name: 'Maggot',          method: 'mete' },
+  majs:            { id: 'majs',            name: 'Majs',            method: 'mete' },
+  jigg:            { id: 'jigg',            name: 'Jigg',            method: 'spinn', methodDefault: true },
+  spinnare:        { id: 'spinnare',        name: 'Spinnare',        method: 'spinn' },
+  wobbler:         { id: 'wobbler',         name: 'Wobbler',         method: 'spinn' },
+  vertikaljigg:    { id: 'vertikaljigg',    name: 'Vertikaljigg',    method: 'vert',  methodDefault: true },
+  pirk:            { id: 'pirk',            name: 'Pirk',            method: 'vert' },
+  trollingwobbler: { id: 'trollingwobbler', name: 'Trollingwobbler', method: 'troll', methodDefault: true },
+};
+const BAIT_ORDER = ['mask', 'maggot', 'majs', 'jigg', 'spinnare', 'wobbler', 'vertikaljigg', 'pirk', 'trollingwobbler'];
 
 const SKINS = [
   { id: 'standard', name: 'Standard',   description: 'Spöets egna finish.',      price: 0,  col: null,       metal: null, rough: null },
@@ -290,9 +339,13 @@ const gameState = {
   rod: 'start', skin: 'standard', boat: false,
   ownedRods: new Set(['start']),
   ownedSkins: new Set(['standard']),
+  /* Startkit: startspö + mask. Övriga beten saknas tills de köps. */
+  ownedBaits: new Set(['mask']),
+  bait: { mete: 'mask', spinn: null, vert: null, troll: null },
   shopCategory: 'rods',
   selRod: 'start',
   selSkin: 'standard',
+  selBait: 'mask',
   view: 'studio',
   log: {},
 };
@@ -346,12 +399,53 @@ const hexToCss = n => '#' + n.toString(16).padStart(6, '0');
 
 function getCurrentMechanic() { return METHODS[gameState.method].mechanic; }
 function getAvailableSpecies() { return SPECIES_ORDER.filter(id => gameState.level >= SPECIES[id].unlockLevel); }
-function isMethodAvailable(methodId) {
-  const m = METHODS[methodId];
-  return gameState.level >= m.unlockLevel && (!m.requiresBoat || gameState.boat);
-}
 function getRodById(id) { return RODS.find(r => r.id === id); }
-function getGearMultiplier() { return 1 + getRodById(gameState.rod).gear / 100; }
+
+/* En metod kräver att man äger ett spö som låser upp den. */
+function ownsRodForMethod(methodId) {
+  return RODS.some(r => gameState.ownedRods.has(r.id) && r.methods.includes(methodId));
+}
+/* Namnet på spöt som låser upp en metod (för shop-texter). */
+function methodRodName(methodId) {
+  const r = RODS.find(rod => rod.methods.includes(methodId));
+  return r ? r.name : 'rätt spö';
+}
+/* Metod tillgänglig = man äger ett spö som stödjer den, och har båt om spöt kräver det. */
+function isMethodAvailable(methodId) {
+  return RODS.some(r =>
+    gameState.ownedRods.has(r.id) &&
+    r.methods.includes(methodId) &&
+    (!r.requiresBoat || gameState.boat));
+}
+/* Spöt syns/går att köpa när spelaren nått dess unlockLevel. */
+function isRodUnlocked(rod) { return gameState.level >= rod.unlockLevel; }
+/* Utrusta automatiskt det ägda spö med längst kast som stödjer metoden. */
+function equipRodForMethod(methodId) {
+  const candidates = RODS.filter(r => gameState.ownedRods.has(r.id) && r.methods.includes(methodId));
+  if (!candidates.length) return;
+  candidates.sort((a, b) => b.castMax - a.castMax);
+  gameState.rod = candidates[0].id;
+}
+/* Byt metod om utrustat spö inte stödjer nuvarande metod. */
+function syncMethodToEquippedRod() {
+  const rod = getRodById(gameState.rod);
+  if (rod && !rod.methods.includes(gameState.method)) gameState.method = rod.methods[0];
+}
+/* Spöets egen maxkastlängd (normaliserad 0..1). */
+function getRodCastMax() { return getRodById(gameState.rod).castMax; }
+/* Behåll signatur — nya spön ger ingen nappfrekvens-bonus (gear saknas → 1). */
+function getGearMultiplier() { return 1 + (getRodById(gameState.rod).gear || 0) / 100; }
+
+/* Aktivt bete för nuvarande metod (null om inget valt/ägt). */
+function getActiveBaitId() { return gameState.bait[gameState.method] || null; }
+/* Mjuk artbias från betet, klampad mot BAIT_BIAS_CAP så det aldrig blir avgörande. */
+function getBaitMultiplier(speciesId) {
+  const baitId = getActiveBaitId();
+  if (!baitId) return 1;
+  const table = BAIT_SPECIES_BIAS[baitId];
+  const raw = (table && table[speciesId] != null) ? table[speciesId] : 1;
+  return Math.max(1 - BAIT_BIAS_CAP, Math.min(1 + BAIT_BIAS_CAP, raw));
+}
 
 /** Skicklighetsbonus som växer med level — kast, hookup-fönster, fight, kontakt. */
 function getLevelFactors() {
@@ -375,7 +469,8 @@ function computeRawWeight(speciesId) {
   const methodMult = METHODS[gameState.method].speciesMult[speciesId];
   const timeMult = TIMES[gameState.time].speciesMult[speciesId];
   const spotMult = SPOTS[gameState.spot].speciesMult[speciesId];
-  let weight = sp.density * methodMult * timeMult * spotMult;
+  /* Bete = mjuk extra multiplikator (takad i getBaitMultiplier). */
+  let weight = sp.density * methodMult * timeMult * spotMult * getBaitMultiplier(speciesId);
   if (sp.isPredator) weight += gameState.level * PREDATOR_LEVEL_BONUS;
   return weight;
 }
@@ -631,7 +726,9 @@ function resetToReady() {
 
 function castMete() {
   storeBiteChanceForCast();
-  const target = { x: canvasW * (0.3 + Math.random() * 0.35), y: waterLineY() + 50 + Math.random() * 55 };
+  /* Spöets castMax styr hur långt ut (uppåt) betet landar. */
+  const reach = getRodCastMax();
+  const target = { x: canvasW * (0.3 + Math.random() * 0.35), y: waterLineY() + (95 - reach * 55) + Math.random() * 40 };
   sceneState.mode = 'cast';
   castAnim = { t: 0, from: getRodTip(), to: target, dur: 0.6, isMete: true };
   getEl('castBtn').classList.add('hidden');
@@ -645,7 +742,8 @@ function releasePowerCast() {
   castCharge = null;
   if (power < 0.12) { resetToReady(); return; }
   storeBiteChanceForCast();
-  const effective = power * getLevelFactors().castMax;
+  /* Spelarens skicklighet × spöets egen maxkastlängd. */
+  const effective = power * getLevelFactors().castMax * getRodCastMax();
   const targetY = waterLineY() + 95 - effective * 70;
   const targetX = Math.max(canvasW * 0.14, Math.min(canvasW * 0.82, aimX + (1 - power) * randomRange(-55, 55)));
   sceneState.mode = 'cast';
@@ -844,20 +942,52 @@ function processLandingRewards() {
   showCatchResultModal(true);
 }
 
-/** Köper eller utrustar vald vara i shoppen. */
+/** Ger metodens gratisbete när ett spö köps (om inget bete för metoden ägs). */
+function grantMethodDefaultBaits(rod) {
+  rod.methods.forEach(methodId => {
+    const ownsSome = BAIT_ORDER.some(id => BAITS[id].method === methodId && gameState.ownedBaits.has(id));
+    if (ownsSome) return;
+    const def = BAIT_ORDER.find(id => BAITS[id].method === methodId && BAITS[id].methodDefault);
+    if (def) { gameState.ownedBaits.add(def); gameState.bait[methodId] = def; }
+  });
+}
+
+/** Köper eller utrustar vald vara i shoppen (spön/bete med kronor, skins med pärlor). */
 function handleShopAction(action) {
   if (gameState.shopCategory === 'rods') {
     const rod = getRodById(gameState.selRod);
     if (action === 'buy') {
+      if (!isRodUnlocked(rod)) return;                 /* låst av level */
       if (gameState.kronor >= rod.price) {
         gameState.kronor -= rod.price;
         gameState.ownedRods.add(rod.id);
+        grantMethodDefaultBaits(rod);
         showToast(rod.name + ' köpt!');
       }
     } else {
       gameState.rod = rod.id;
+      syncMethodToEquippedRod();
+      renderSetupChips();
+      renderOddsBar();
+      if (sceneState.mode === 'ready') resetToReady();
       showToast(rod.name + ' utrustad');
     }
+  } else if (gameState.shopCategory === 'baits') {
+    const bait = BAITS[gameState.selBait];
+    if (action === 'buy') {
+      if (!ownsRodForMethod(bait.method)) return;      /* kräver spö för metoden */
+      const price = BAIT_PRICES[bait.id];
+      if (gameState.kronor >= price) {
+        gameState.kronor -= price;
+        gameState.ownedBaits.add(bait.id);
+        gameState.bait[bait.method] = bait.id;         /* utrusta direkt */
+        showToast(bait.name + ' köpt!');
+      }
+    } else {
+      gameState.bait[bait.method] = bait.id;
+      showToast(bait.name + ' valt');
+    }
+    if (gameState.method === bait.method) renderOddsBar();
   } else {
     const skin = SKINS.find(s => s.id === gameState.selSkin);
     if (action === 'buy') {
@@ -891,7 +1021,8 @@ function grantXp(amount) {
       .filter(id => SPECIES[id].unlockLevel === gameState.level)
       .map(id => SPECIES[id].name);
     const extraUnlocks = [];
-    if (METHODS.vert.unlockLevel === gameState.level) extraUnlocks.push('Vertikalfiske');
+    /* Spön som blir köpbara i shoppen på denna level. */
+    RODS.filter(r => r.unlockLevel === gameState.level).forEach(r => extraUnlocks.push(r.name + ' (shop)'));
     if (SPOTS.rev.unlockLevel === gameState.level) extraUnlocks.push('Stenrev');
     if (SPOTS.djup.unlockLevel === gameState.level) extraUnlocks.push('Djupkant');
     if (gameState.level === 15) extraUnlocks.push('Båt (köp i shop)');
@@ -962,6 +1093,12 @@ function renderSetupChips() {
     html += `<span data-g="method" data-k="${id}">${makeChipHtml(METHODS[id].name, gameState.method === id, isMethodAvailable(id))}</span>`;
   }
   getEl('methods').innerHTML = html;
+  /* Bete för aktuell metod — upplåst = ägt (köps i shoppen). */
+  html = '';
+  BAIT_ORDER.filter(id => BAITS[id].method === gameState.method).forEach(id => {
+    html += `<span data-g="bait" data-k="${id}">${makeChipHtml(BAITS[id].name, gameState.bait[gameState.method] === id, gameState.ownedBaits.has(id))}</span>`;
+  });
+  getEl('baits').innerHTML = html || '<span style="font-size:12px;color:var(--muted)">Inget bete</span>';
   html = '';
   for (const id in TIMES) {
     html += `<span data-g="time" data-k="${id}">${makeChipHtml(TIMES[id].name, gameState.time === id, true)}</span>`;
@@ -980,7 +1117,9 @@ function renderOddsBar() {
     bar.insertAdjacentHTML('beforeend',
       `<div class="oseg" style="width:${pct}%;background:${getCssVar(SPECIES[entry.id].colorVar)}"></div>`);
   });
-  getEl('legtxt').textContent = SPOTS[gameState.spot].name + ' · ' + METHODS[gameState.method].name + ' · ' + TIMES[gameState.time].name;
+  const baitId = getActiveBaitId();
+  const baitName = baitId ? ' · ' + BAITS[baitId].name : '';
+  getEl('legtxt').textContent = SPOTS[gameState.spot].name + ' · ' + METHODS[gameState.method].name + baitName + ' · ' + TIMES[gameState.time].name;
 }
 
 function showReelPad(visible) { getEl('reelpad').classList.toggle('on', visible); }
@@ -1210,7 +1349,7 @@ function drawFishingScene(now) {
   drawRod();
   if (sceneState.mode === 'charging' && castCharge) {
     const pr = castCharge.power;
-    const eff = pr * getLevelFactors().castMax;
+    const eff = pr * getLevelFactors().castMax * getRodCastMax();
     const ty = waterLineY() + 95 - eff * 70;
     const tx = Math.max(canvasW * 0.14, Math.min(canvasW * 0.82, castCharge.x));
     const tip = getRodTip();
@@ -1511,6 +1650,10 @@ function setShopView(viewId) {
 }
 
 function getShopSelection() {
+  /* Bete har ingen egen 3D-modell — visa utrustat spö i hero. */
+  if (gameState.shopCategory === 'baits') {
+    return { rod: getRodById(gameState.rod), skin: SKINS.find(s => s.id === gameState.skin) };
+  }
   return {
     rod: getRodById(gameState.shopCategory === 'rods' ? gameState.selRod : gameState.rod),
     skin: SKINS.find(s => s.id === (gameState.shopCategory === 'skins' ? gameState.selSkin : gameState.skin)),
@@ -1523,7 +1666,9 @@ function renderShopHero() {
   buildShopRod(rod, skin);
   const isEquipped = gameState.shopCategory === 'rods'
     ? gameState.selRod === gameState.rod
-    : gameState.selSkin === gameState.skin;
+    : gameState.shopCategory === 'baits'
+      ? gameState.bait[BAITS[gameState.selBait].method] === gameState.selBait
+      : gameState.selSkin === gameState.skin;
   getEl('heq').classList.toggle('on', isEquipped);
   getEl('hero').classList.toggle('water', gameState.view === 'water');
 }
@@ -1544,20 +1689,56 @@ function buildShopCtaHtml(price, currencyKind, owned, equipped) {
   return `<div class="scta">${priceHtml}${btn}</div>`;
 }
 
+/* Låst CTA — visas för spön som ännu inte nått sin level. */
+function buildLockedCtaHtml(level) {
+  return `<div class="scta"><span class="sprice">Låst</span><button class="sbuy cant" disabled>Låses upp på level ${level}</button></div>`;
+}
+
+/* CTA för bete (kronor). Utrusta-knappen heter "Välj". */
+function buildBaitCtaHtml(bait, owned, equipped) {
+  const price = BAIT_PRICES[bait.id];
+  const priceHtml = price === 0
+    ? '<span class="sprice free">Gratis</span>'
+    : `<span class="sprice kr">${price.toLocaleString('sv-SE')} kr</span>`;
+  let btn;
+  if (equipped) btn = '<button class="sbuy equipped" disabled>✓ Vald</button>';
+  else if (owned) btn = '<button class="sbuy equip" id="sb" data-a="equip">Välj</button>';
+  else btn = gameState.kronor >= price
+    ? '<button class="sbuy primary" id="sb" data-a="buy">Köp</button>'
+    : '<button class="sbuy cant" disabled>För lite kr</button>';
+  return `<div class="scta">${priceHtml}${btn}</div>`;
+}
+
 function renderShopInfo() {
   const info = getEl('sinfo');
   if (gameState.shopCategory === 'rods') {
     const rod = getRodById(gameState.selRod);
     const owned = gameState.ownedRods.has(rod.id);
     const equipped = gameState.rod === rod.id;
+    const unlocked = isRodUnlocked(rod);
+    const methodNames = rod.methods.map(m => METHODS[m].name).join(', ');
+    const castPct = Math.round(rod.castMax * 100);
+    const boatNote = rod.requiresBoat ? ' <b>Kräver båt.</b>' : '';
     info.innerHTML = `
       <div class="nm">${rod.name}</div>
       <div class="ds">${rod.description}</div>
-      <div class="statline"><span class="lab">Nappfrekvens</span>
-        <div class="sbar"><div class="f" style="width:${rod.gear / GEAR_CAP * 100}%"></div><div class="cap" style="left:100%"></div></div>
-        <span class="sv">+${rod.gear}%</span></div>
-      <div class="ptag">Bara hur <b>ofta</b> det nappar. Takat vid +${GEAR_CAP}%. Aldrig storfisket.</div>
-      ${buildShopCtaHtml(rod.price, 'kr', owned, equipped)}`;
+      <div class="statline"><span class="lab">Kastlängd</span>
+        <div class="sbar"><div class="f" style="width:${castPct}%"></div><div class="cap" style="left:100%"></div></div>
+        <span class="sv">${castPct}%</span></div>
+      <div class="ptag">Metod: <b>${methodNames}</b>.${boatNote}</div>
+      ${unlocked ? buildShopCtaHtml(rod.price, 'kr', owned, equipped) : buildLockedCtaHtml(rod.unlockLevel)}`;
+  } else if (gameState.shopCategory === 'baits') {
+    const bait = BAITS[gameState.selBait];
+    const owned = gameState.ownedBaits.has(bait.id);
+    const equipped = gameState.bait[bait.method] === bait.id;
+    const methodOwned = ownsRodForMethod(bait.method);
+    const capPct = Math.round(BAIT_BIAS_CAP * 100);
+    info.innerHTML = `
+      <div class="nm">${bait.name}</div>
+      <div class="ds">För ${METHODS[bait.method].name}.</div>
+      <div class="cnote"><b>Mjuk bias.</b> Bete gör att vissa arter nappar lite oftare — takat vid ±${capPct}%, aldrig avgörande.</div>
+      ${methodOwned ? buildBaitCtaHtml(bait, owned, equipped)
+        : `<div class="scta"><span class="sprice">Låst</span><button class="sbuy cant" disabled>Kräver ${methodRodName(bait.method)}</button></div>`}`;
   } else {
     const skin = SKINS.find(s => s.id === gameState.selSkin);
     const owned = gameState.ownedSkins.has(skin.id);
@@ -1580,29 +1761,54 @@ function bindShopActionButton() {
 function renderShelf() {
   const shelf = getEl('shelf');
   shelf.innerHTML = '';
-  const list = gameState.shopCategory === 'rods' ? RODS : SKINS;
-  const selected = gameState.shopCategory === 'rods' ? gameState.selRod : gameState.selSkin;
-  const ownedSet = gameState.shopCategory === 'rods' ? gameState.ownedRods : gameState.ownedSkins;
+  const cat = gameState.shopCategory;
+
+  /* Per kategori: lista, vald, ägd-koll, lås-koll, lås-etikett och prisetikett. */
+  let list, selected, isOwned, isLocked, lockLabel, priceLabel;
+  if (cat === 'rods') {
+    list = RODS; selected = gameState.selRod;
+    isOwned = it => gameState.ownedRods.has(it.id);
+    isLocked = it => !isRodUnlocked(it);
+    lockLabel = it => 'Lvl ' + it.unlockLevel;
+    priceLabel = it => it.price === 0 ? 'Gratis' : it.price.toLocaleString('sv-SE') + ' kr';
+  } else if (cat === 'baits') {
+    list = BAIT_ORDER.map(id => BAITS[id]); selected = gameState.selBait;
+    isOwned = it => gameState.ownedBaits.has(it.id);
+    isLocked = it => !ownsRodForMethod(it.method);
+    lockLabel = () => 'Kräver spö';
+    priceLabel = it => BAIT_PRICES[it.id] === 0 ? 'Gratis' : BAIT_PRICES[it.id].toLocaleString('sv-SE') + ' kr';
+  } else {
+    list = SKINS; selected = gameState.selSkin;
+    isOwned = it => gameState.ownedSkins.has(it.id);
+    isLocked = () => false;
+    lockLabel = () => '';
+    priceLabel = it => it.price === 0 ? 'Gratis' : '◈ ' + it.price;
+  }
+
   list.forEach(item => {
     const div = document.createElement('div');
-    div.className = 'sitem' + (ownedSet.has(item.id) ? ' owned' : '');
+    const locked = isLocked(item);
+    div.className = 'sitem' + (isOwned(item) ? ' owned' : '');
     div.setAttribute('aria-selected', item.id === selected);
-    const priceLabel = item.price === 0 ? 'Gratis'
-      : (gameState.shopCategory === 'rods' ? item.price.toLocaleString('sv-SE') + ' kr' : '◈ ' + item.price);
-    div.innerHTML = `<div class="sthumb"></div><div class="nm2">${item.name}</div><div class="pr2">${priceLabel}</div><div class="ow">✓</div>`;
+    if (locked) div.style.opacity = '0.45';   /* gråtonad tills upplåst */
+    div.innerHTML = `<div class="sthumb"></div><div class="nm2">${item.name}</div><div class="pr2">${locked ? lockLabel(item) : priceLabel(item)}</div><div class="ow">✓</div>`;
     div.onclick = () => {
-      if (gameState.shopCategory === 'rods') gameState.selRod = item.id;
+      if (cat === 'rods') gameState.selRod = item.id;
+      else if (cat === 'baits') gameState.selBait = item.id;
       else gameState.selSkin = item.id;
       renderShopHero();
       renderShopInfo();
       renderShelf();
     };
     shelf.appendChild(div);
-    const rod = gameState.shopCategory === 'rods' ? item : getRodById(gameState.rod);
-    const skin = gameState.shopCategory === 'skins' ? item : SKINS.find(s => s.id === gameState.skin);
-    const url = getRodThumbnailUrl(rod, skin);
-    const thumb = div.querySelector('.sthumb');
-    if (url) thumb.style.backgroundImage = `url(${url}), radial-gradient(120% 100% at 50% 20%,#1c4150,#0c1f27)`;
+    /* Bete saknar 3D-modell — endast spön/skins får miniatyrbild. */
+    if (cat !== 'baits') {
+      const rod = cat === 'rods' ? item : getRodById(gameState.rod);
+      const skin = cat === 'skins' ? item : SKINS.find(s => s.id === gameState.skin);
+      const url = getRodThumbnailUrl(rod, skin);
+      const thumb = div.querySelector('.sthumb');
+      if (url) thumb.style.backgroundImage = `url(${url}), radial-gradient(120% 100% at 50% 20%,#1c4150,#0c1f27)`;
+    }
   });
 }
 
@@ -1617,8 +1823,17 @@ function bindSetupChipHandlers() {
     el.onclick = () => {
       if (el.querySelector('.locked')) return;
       const field = el.dataset.g;
-      const changedMethod = field === 'method' && gameState[field] !== el.dataset.k;
-      gameState[field] = el.dataset.k;
+      const value = el.dataset.k;
+      if (field === 'bait') {
+        /* Bete lagras per metod. */
+        gameState.bait[gameState.method] = value;
+        renderSetupChips();
+        renderOddsBar();
+        return;
+      }
+      const changedMethod = field === 'method' && gameState[field] !== value;
+      gameState[field] = value;
+      if (changedMethod) equipRodForMethod(value);  /* utrusta spö som passar metoden */
       renderSetupChips();
       renderOddsBar();
       if (changedMethod && sceneState.mode === 'ready') resetToReady();
