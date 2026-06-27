@@ -304,6 +304,30 @@ const FIGHT_RUN_MIN_DISTANCE   = 0.12;  /* inga nya rusningar när fisken är s�
 /* Passivitet — för länge utan att veva när fisken är lugn = fisken lossnar. */
 const FIGHT_SLACK_MAX = 3.0;            /* sek passiv (lugn fas) innan fisken lossnar */
 
+/* ############################################################################
+   PLATSHÅLLARE — KAST (kalibreras senare)
+   Kraftmätare med grön sweet spot. Kastlängd kopplas till spoten och förskjuter
+   mot rätt/större fisk — den ökar ALDRIG total nappfrekvens eller fångstmängd.
+   ############################################################################ */
+
+/* Kraftmätarens pendling och sweet spot (mätarvärde 0..1). */
+const CAST_OSCILLATION_SPEED = 1.15;   /* cykler per sek — högre = snabbare/svårare */
+const CAST_SWEET_CENTER      = 0.85;   /* var i mätaren gröna zonen sitter (0 botten, 1 topp) */
+const CAST_SWEET_HALF_WIDTH  = 0.12;   /* halva bredden på gröna zonen */
+const CAST_FALLOFF           = 0.60;   /* hur snabbt längden faller utanför zonen */
+const CAST_MIN_FACTOR        = 0.35;   /* kortaste kast (andel av spöets castMax) vid helt missat släpp */
+const CAST_METE_FACTOR       = 0.70;   /* fast längdandel för metets knappkast (ingen mätare) */
+
+/* Visuell räckvidd i pixlar från vattenlinjen (större skillnad = tydligare kast). */
+const CAST_NEAR_OFFSET = 135;          /* kort plask nära spelaren */
+const CAST_FAR_OFFSET  = 18;           /* långt kast nära horisonten */
+
+/* Kast → spot-koppling (förskjuter artfördelning/storlek, ALDRIG frekvens). */
+const CAST_REACH_NEUTRAL  = 0.60;      /* referenslängd; över = stärker spoten, under = försvagar */
+const CAST_SPOT_GAIN      = 0.70;      /* hur mycket kastlängd förstärker spotens artkaraktär */
+const CAST_SPOT_CAP       = 0.12;      /* tak på förskjutningen per art (±12 %) */
+const CAST_QUALITY_GAIN   = 0.25;      /* hur mycket långt kast lyfter storlekskvaliteten (takat) */
+
 /** Artspecifik vibration: bite = hugg, pulse = fightrytm, iv = intervall (s), sh = skärmskakning. */
 const HAPTIC_PROFILES = {
   mort:    { bite: [18],         pulse: [16],         iv: 0.50, sh: 3 },
@@ -429,7 +453,7 @@ SPECIES_ORDER.forEach(id => {
 });
 
 /** Tillståndsmaskin för fiskescenen (mode styr kast, napp, fight m.m.). */
-const sceneState = { mode: 'ready', t: 0, _nibbleAt: null };
+const sceneState = { mode: 'ready', t: 0, _nibbleAt: null, castReach: null };
 
 let lure = { x: 0, y: 0, bob: 0, prog: 0, phase: '', pt: 0, height: 0, startX: null, startY: null };
 let castAnim = { t: 0 };
@@ -505,6 +529,24 @@ function getRodCastMax() { return getRodById(gameState.rod).castMax; }
 /* Behåll signatur — nya spön ger ingen nappfrekvens-bonus (gear saknas → 1). */
 function getGearMultiplier() { return 1 + (getRodById(gameState.rod).gear || 0) / 100; }
 
+/* Mätarvärde (0..1) → längdandel. Släpp i gröna zonen = 1 (max), annars kortare. */
+function getCastLengthFactor(meterValue) {
+  const d = Math.abs(meterValue - CAST_SWEET_CENTER);
+  if (d <= CAST_SWEET_HALF_WIDTH) return 1;
+  const accuracy = Math.max(0, 1 - (d - CAST_SWEET_HALF_WIDTH) / CAST_FALLOFF);
+  return CAST_MIN_FACTOR + (1 - CAST_MIN_FACTOR) * accuracy;
+}
+
+/* Kastlängdens förskjutning av artfördelningen via spoten. Centrerad kring 1 och
+   takad, så den bara styr VILKEN art man får — aldrig hur ofta det nappar. */
+function getCastSpotMultiplier(speciesId) {
+  if (sceneState.castReach == null) return 1;
+  const spotDev = SPOTS[gameState.spot].speciesMult[speciesId] - 1;   /* spotens artkaraktär */
+  const reachDelta = sceneState.castReach - CAST_REACH_NEUTRAL;       /* + = långt, − = kort */
+  const shift = Math.max(-CAST_SPOT_CAP, Math.min(CAST_SPOT_CAP, spotDev * reachDelta * CAST_SPOT_GAIN));
+  return 1 + shift;
+}
+
 /* Aktivt bete för nuvarande metod (null om inget valt/ägt). */
 function getActiveBaitId() { return gameState.bait[gameState.method] || null; }
 /* Mjuk artbias från betet, klampad mot BAIT_BIAS_CAP så det aldrig blir avgörande. */
@@ -554,9 +596,14 @@ function computeRawWeight(speciesId) {
 
 /** Jämför nuvarande upplägg mot bästa möjliga — styr storleksklass, inte nappfrekvens. */
 function computeSetupQuality(speciesId) {
-  const current = METHODS[gameState.method].speciesMult[speciesId]
+  let current = METHODS[gameState.method].speciesMult[speciesId]
     * TIMES[gameState.time].speciesMult[speciesId]
     * SPOTS[gameState.spot].speciesMult[speciesId];
+  /* Långt kast lyfter spotens förutsättningar → större fisk (takat). Påverkar inte frekvensen. */
+  if (sceneState.castReach != null) {
+    const q = (sceneState.castReach - CAST_REACH_NEUTRAL) * CAST_QUALITY_GAIN;
+    current *= 1 + Math.max(-CAST_QUALITY_GAIN, Math.min(CAST_QUALITY_GAIN, q));
+  }
   let best = 0;
   for (const methodId in METHODS) {
     if (!isMethodAvailable(methodId)) continue;
@@ -582,8 +629,8 @@ function computeBiteOdds() {
   const baseSum = available.reduce((acc, id) => acc + computeRawWeight(id), 0);
   let biteChance = BITE_CEILING * baseSum / (baseSum + ODDS_SATURATION);
   biteChance = Math.min(BITE_CEILING, biteChance * (1 + 0.01 * gameState.level) * getGearMultiplier());
-  /* Betesviktade vikter → endast vilken art man får. */
-  const rawWeights = available.map(id => ({ id, weight: computeRawWeight(id) * getBaitMultiplier(id) }));
+  /* Bete + kastlängd biaserar endast vilken art man får (baseSum är orörd → frekvens oförändrad). */
+  const rawWeights = available.map(id => ({ id, weight: computeRawWeight(id) * getBaitMultiplier(id) * getCastSpotMultiplier(id) }));
   const sum = rawWeights.reduce((acc, o) => acc + o.weight, 0);
   return { rawWeights, sum, biteChance };
 }
@@ -818,6 +865,7 @@ function resetToReady() {
   lure.startY = null;
   lure.prog = 0;
   castCharge = null;
+  sceneState.castReach = null;   /* ingen aktiv kast-koppling i redoläge */
   getEl('hud').classList.remove('on');
   showReelPad(false);
   showLiftButton(false);
@@ -832,35 +880,44 @@ function resetToReady() {
   } else {
     getEl('castBtn').classList.add('hidden');
     getEl('uplBtn').classList.remove('hidden');
-    setHint('Håll på vattnet för att ladda kastet — släpp i toppen.');
+    setHint('Håll på vattnet för att ladda kastet — släpp i gröna zonen.');
   }
+}
+
+/** Beräknar mål-Y i vattnet från en längdandel (0..1). Större → längre ut mot horisonten. */
+function castTargetY(castLen) {
+  return waterLineY() + CAST_NEAR_OFFSET - castLen * (CAST_NEAR_OFFSET - CAST_FAR_OFFSET);
 }
 
 function castMete() {
   storeBiteChanceForCast();
-  /* Spöets castMax styr hur långt ut (uppåt) betet landar. */
-  const reach = getRodCastMax();
-  const target = { x: canvasW * (0.3 + Math.random() * 0.35), y: waterLineY() + (95 - reach * 55) + Math.random() * 40 };
+  /* Mete har ingen mätare — fast längdandel × spöets castMax. */
+  const castLen = CAST_METE_FACTOR * getRodCastMax();
+  sceneState.castReach = castLen;   /* koppling till fångst (förskjuter, ökar ej frekvens) */
+  const target = { x: canvasW * (0.32 + Math.random() * 0.3), y: castTargetY(castLen) };
   sceneState.mode = 'cast';
-  castAnim = { t: 0, from: getRodTip(), to: target, dur: 0.6, isMete: true };
+  castAnim = { t: 0, from: getRodTip(), to: target, dur: 0.6, isMete: true, arc: canvasH * (0.14 + 0.18 * castLen) };
   getEl('castBtn').classList.add('hidden');
   getEl('uplBtn').classList.add('hidden');
   getEl('dock').style.opacity = 0.2;
 }
 
 function releasePowerCast() {
-  const power = castCharge.power;
+  const meter = castCharge.power;
   const aimX = castCharge.x;
   castCharge = null;
-  if (power < 0.12) { resetToReady(); return; }
+  if (meter < 0.04) { resetToReady(); return; }   /* knappt laddat — avbryt */
   storeBiteChanceForCast();
-  /* Spelarens skicklighet × spöets egen maxkastlängd. */
-  const effective = power * getLevelFactors().castMax * getRodCastMax();
-  const targetY = waterLineY() + 95 - effective * 70;
-  const targetX = Math.max(canvasW * 0.14, Math.min(canvasW * 0.82, aimX + (1 - power) * randomRange(-55, 55)));
+  /* Sweet spot → längdandel, takad av spöets egen castMax. */
+  const lengthFactor = getCastLengthFactor(meter);
+  const castLen = lengthFactor * getRodCastMax();
+  sceneState.castReach = castLen;   /* koppling till fångst (förskjuter, ökar ej frekvens) */
+  const targetY = castTargetY(castLen);
+  const targetX = Math.max(canvasW * 0.14, Math.min(canvasW * 0.82, aimX));
   sceneState.mode = 'cast';
-  castAnim = { t: 0, from: getRodTip(), to: { x: targetX, y: targetY }, dur: 0.55 };
-  if (power > 0.82) showToast('Fint kast!');
+  castAnim = { t: 0, from: getRodTip(), to: { x: targetX, y: targetY }, dur: 0.55, arc: canvasH * (0.14 + 0.18 * castLen) };
+  if (lengthFactor >= 0.999) showToast('Perfekt kast!');
+  else if (lengthFactor > 0.7) showToast('Bra kast!');
   setHint('');
   getEl('dock').style.opacity = 0.2;
 }
@@ -912,7 +969,8 @@ function updateFishingScene(dt, now) {
   }
   if (sceneState.mode === 'charging' && castCharge) {
     castCharge.t += dt;
-    const phase = castCharge.t % 1.0;
+    /* Triangelvåg 0→1→0; CAST_OSCILLATION_SPEED styr pendlingshastigheten. */
+    const phase = (castCharge.t * CAST_OSCILLATION_SPEED) % 1.0;
     castCharge.power = phase < 0.5 ? phase * 2 : (1 - phase) * 2;
     rodBend = -(0.3 + 0.25 * castCharge.power);
   }
@@ -920,8 +978,9 @@ function updateFishingScene(dt, now) {
     castAnim.t += dt;
     const p = Math.min(1, castAnim.t / castAnim.dur);
     const ease = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+    const arc = castAnim.arc || canvasH * 0.22;   /* längre kast → högre båge */
     lure.x = castAnim.from.x + (castAnim.to.x - castAnim.from.x) * ease;
-    lure.y = castAnim.from.y + (castAnim.to.y - castAnim.from.y) * ease - Math.sin(p * Math.PI) * (canvasH * 0.22);
+    lure.y = castAnim.from.y + (castAnim.to.y - castAnim.from.y) * ease - Math.sin(p * Math.PI) * arc;
     rodBend = Math.sin(Math.min(1, castAnim.t / 0.16) * Math.PI) * 0.55;
     if (p >= 1) {
       rodBend = 0;
@@ -1478,31 +1537,37 @@ function drawFishingScene(now) {
   ctx.fill();
   drawRod();
   if (sceneState.mode === 'charging' && castCharge) {
-    const pr = castCharge.power;
-    const eff = pr * getLevelFactors().castMax * getRodCastMax();
-    const ty = waterLineY() + 95 - eff * 70;
+    const meter = castCharge.power;
+    const lengthFactor = getCastLengthFactor(meter);
+    const inSweet = lengthFactor >= 0.999;
+    const castLen = lengthFactor * getRodCastMax();
+    const ty = castTargetY(castLen);
     const tx = Math.max(canvasW * 0.14, Math.min(canvasW * 0.82, castCharge.x));
     const tip = getRodTip();
     ctx.save();
-    ctx.strokeStyle = 'rgba(95,192,212,.6)';
+    /* Förhandsvisad kastbåge — landningspunkten visar var betet hamnar. */
+    ctx.strokeStyle = inSweet ? 'rgba(116,214,128,.7)' : 'rgba(95,192,212,.6)';
     ctx.setLineDash([4, 5]);
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(tip.x, tip.y);
-    ctx.quadraticCurveTo((tip.x + tx) / 2, Math.min(tip.y, ty) - 60 * pr, tx, ty);
+    ctx.quadraticCurveTo((tip.x + tx) / 2, Math.min(tip.y, ty) - 60 * lengthFactor, tx, ty);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(95,192,212,.85)';
+    ctx.fillStyle = inSweet ? '#74d680' : 'rgba(95,192,212,.85)';
     ctx.beginPath();
     ctx.arc(tx, ty, 5, 0, 7);
     ctx.fill();
+    /* Vertikal kraftmätare med grön sweet spot (värde 1 = topp). */
     const mx = 18, my = canvasH - 190, mh = 150;
     ctx.fillStyle = 'rgba(6,16,22,.7)';
     ctx.fillRect(mx, my, 13, mh);
-    ctx.fillStyle = 'rgba(242,205,98,.4)';
-    ctx.fillRect(mx, my, 13, mh * 0.18);
-    ctx.fillStyle = pr > 0.82 ? '#f2cd62' : '#5fc0d4';
-    ctx.fillRect(mx - 3, my + mh * (1 - pr) - 2, 19, 4);
+    const zoneTop = my + mh * (1 - (CAST_SWEET_CENTER + CAST_SWEET_HALF_WIDTH));
+    const zoneBot = my + mh * (1 - (CAST_SWEET_CENTER - CAST_SWEET_HALF_WIDTH));
+    ctx.fillStyle = 'rgba(116,214,128,.45)';
+    ctx.fillRect(mx, zoneTop, 13, zoneBot - zoneTop);
+    ctx.fillStyle = inSweet ? '#74d680' : '#5fc0d4';
+    ctx.fillRect(mx - 3, my + mh * (1 - meter) - 2, 19, 4);
     ctx.restore();
   }
   ctx.save();
@@ -2024,7 +2089,7 @@ function bindCanvasCastInput() {
     castCharge = { t: 0, power: 0, x: e.clientX - rect.left };
     sceneState.mode = 'charging';
     getEl('uplBtn').classList.add('hidden');
-    setHint('Släpp i den gula zonen (toppen) för längsta kast.');
+    setHint('Släpp i gröna zonen för längsta kast.');
   });
   canvas.addEventListener('pointermove', e => {
     if (sceneState.mode !== 'charging' || !castCharge) return;
