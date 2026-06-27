@@ -54,7 +54,7 @@
   .tfl{position:absolute;left:0;top:0;bottom:0;width:0;transition:width .06s linear}
   .tens .tfl{background:linear-gradient(90deg,var(--reed),var(--gold) 70%,var(--danger))}
   .tens .red{position:absolute;right:0;top:0;bottom:0;width:16%;background:repeating-linear-gradient(45deg,rgba(223,111,93,.45) 0 5px,transparent 5px 10px)}
-  .stam .tfl{background:linear-gradient(90deg,#7a93a8,#a9c2cf)}
+  .dist .tfl{background:linear-gradient(90deg,#7a93a8,#a9c2cf)}
   .runwarn{align-self:center;background:rgba(223,111,93,.92);color:#2a0e0a;font-weight:800;font-size:12px;letter-spacing:.05em;padding:5px 14px;border-radius:30px;opacity:0;transition:.15s;text-transform:uppercase}
   .runwarn.on{opacity:1}
 
@@ -157,7 +157,7 @@
       <canvas id="cv"></canvas>
       <div class="hud" id="hud">
         <div class="g tens"><div class="gl"><span>Linspänning</span><span id="tp"></span></div><div class="track"><div class="red"></div><div class="tfl" id="tf"></div></div></div>
-        <div class="g stam"><div class="gl"><span>Fiskens ork</span><span id="sp"></span></div><div class="track"><div class="tfl" id="sf"></div></div></div>
+        <div class="g dist"><div class="gl"><span>Avstånd</span><span id="dp"></span></div><div class="track"><div class="tfl" id="df"></div></div></div>
         <div class="runwarn" id="rw">Fisken rusar — ge lina!</div>
       </div>
       <div class="reelpad" id="reelpad"><div class="arrows">▲</div><div class="lbl">Reva</div><div class="arrows b">▼</div><div class="grip" id="grip"></div></div>
@@ -267,6 +267,42 @@ const LEVEL_SKILL_SPAN = 19;      /* Antal level till full skicklighet (lf) */
 function xpRequiredForLevel(level) {
   return Math.round(XP_BASE * Math.pow(level, 1.4));
 }
+
+/* ############################################################################
+   PLATSHÅLLARE — FIGHT (kalibreras senare)
+   Allt deterministiskt: fiskens storlek vs spelarens level styr svårigheten,
+   ingen slump avgör om man tappar fisken.
+   ############################################################################ */
+
+/* Svårighet: difficulty = (BASE + SIZE_FACTOR × fiskens styrka 0..1) × (1 − LEVEL_RELIEF × levelandel). */
+const FIGHT_DIFFICULTY_BASE = 0.6;      /* grundsvårighet för minsta fisk */
+const FIGHT_SIZE_FACTOR     = 0.9;      /* hur mycket storlek ökar svårigheten */
+const FIGHT_LEVEL_RELIEF    = 0.4;      /* hur mycket full level sänker svårigheten (0..1) */
+
+/* Avstånd (1 = långt borta, 0 = i håven). */
+const FIGHT_START_DISTANCE     = 0.90;  /* startavstånd när fighten börjar */
+const FIGHT_DISTANCE_MAX       = 1.0;   /* tak — fisken kan inte dra ut mer lina än så */
+const FIGHT_REEL_DISTANCE_RATE = 0.16;  /* avstånd in per sek vid full vev */
+
+/* Linspänning (0..1; vid TENSION_MAX brister linan). */
+const FIGHT_TENSION_MAX       = 1.0;    /* spänning då linan går av */
+const FIGHT_DANGER_ZONE       = 0.84;   /* röd farozon börjar här (matchar HUD-grafiken) */
+const FIGHT_REEL_TENSION_RATE = 0.30;   /* spänning per sek vid vev (× difficulty × vevkraft) */
+const FIGHT_TENSION_DECAY     = 0.55;   /* spänning som släpper per sek när man ger lina */
+const FIGHT_REEL_THRESHOLD    = 0.04;   /* dödzon — vevinput under detta räknas som passiv */
+
+/* Rusningar (fisken drar; spänningen rusar upp → släpp veven tills den lugnar sig). */
+const FIGHT_RUN_FIRST_DELAY    = 2.2;   /* sek innan första rusningen */
+const FIGHT_RUN_INTERVAL       = 3.2;   /* sek mellan rusningar (deterministiskt) */
+const FIGHT_RUN_DURATION_BASE  = 0.8;   /* grundlängd på en rusning (sek) */
+const FIGHT_RUN_DURATION_SCALE = 0.9;   /* extra rusningslängd × difficulty */
+const FIGHT_RUN_TENSION_RATE   = 0.42;  /* spänning per sek under rusning (× difficulty) */
+const FIGHT_RUN_REEL_PENALTY   = 2.2;   /* extra spänning om man vevar mitt i en rusning */
+const FIGHT_RUN_DISTANCE_RATE  = 0.14;  /* avstånd fisken drar ut per sek under rusning (× difficulty) */
+const FIGHT_RUN_MIN_DISTANCE   = 0.12;  /* inga nya rusningar när fisken är så här nära */
+
+/* Passivitet — för länge utan att veva när fisken är lugn = fisken lossnar. */
+const FIGHT_SLACK_MAX = 3.0;            /* sek passiv (lugn fas) innan fisken lossnar */
 
 /** Artspecifik vibration: bite = hugg, pulse = fightrytm, iv = intervall (s), sh = skärmskakning. */
 const HAPTIC_PROFILES = {
@@ -491,6 +527,14 @@ function getLevelFactors() {
   };
 }
 
+/** Deterministisk fightsvårighet: större fisk vs spelarens level → spänning stiger
+    snabbare och rusningar blir hårdare. Ingen slump inblandad. */
+function getFightDifficulty(fish) {
+  const p = Math.min(1, (gameState.level - 1) / LEVEL_SKILL_SPAN);
+  const base = FIGHT_DIFFICULTY_BASE + FIGHT_SIZE_FACTOR * fish.strength;
+  return base * (1 - FIGHT_LEVEL_RELIEF * p);
+}
+
 /* =============================================================================
    FÅNGSTMOTOR
    Nappchans, artval, storleksdragning, kvalitet, kast, fight och scenuppdatering.
@@ -633,14 +677,16 @@ function onNoBite() {
 
 function startFight() {
   sceneState.mode = 'fight';
-  const st = hookedFish.strength;
+  const difficulty = getFightDifficulty(hookedFish);
   fightState = {
     tension: 0,
-    stamina: 3 + st * 9,
-    max: 3 + st * 9,
+    distance: FIGHT_START_DISTANCE,
+    difficulty,
+    runDuration: FIGHT_RUN_DURATION_BASE + difficulty * FIGHT_RUN_DURATION_SCALE,
     running: false,
-    runTimer: randomRange(1.2, 2.4),
-    runDuration: 0,
+    runTimer: FIGHT_RUN_FIRST_DELAY,   /* tid kvar till nästa rusning */
+    runRemaining: 0,                   /* tid kvar av pågående rusning */
+    slack: 0,                          /* passivitetsmätare (lugn fas utan vev) */
     pulseTimer: 0,
     last: performance.now(),
   };
@@ -648,7 +694,7 @@ function startFight() {
   showReelPad(true);
   showLiftButton(false);
   showStrikeButton(false);
-  setHint('Reva (höger) — ge lina när den rusar.');
+  setHint('Reva (höger) — släpp veven när den rusar.');
 }
 
 function endFight() {
@@ -660,54 +706,72 @@ function endFight() {
 
 function tickFight(now) {
   if (sceneState.mode !== 'fight' || !fightState) return;
-  const dt = Math.min(0.05, (now - fightState.last) / 1000);
-  fightState.last = now;
+  const fs = fightState;
+  const dt = Math.min(0.05, (now - fs.last) / 1000);
+  fs.last = now;
   const input = consumeReelInput(dt);
-  const st = hookedFish.strength;
+  const reeling = input > FIGHT_REEL_THRESHOLD;
   const haptic = HAPTIC_PROFILES[hookedFish.speciesId];
-  fightState.pulseTimer -= dt;
-  if (fightState.pulseTimer <= 0) {
-    triggerHaptic(haptic.pulse, haptic.sh * (fightState.running ? 0.9 : 0.45));
-    fightState.pulseTimer = fightState.running ? haptic.iv * 0.6 : haptic.iv;
+
+  /* Haptik-puls i fightrytm (snabbare i röd farozon och under rusning). Återanvänder haptik-/skakmotorn. */
+  const inDanger = fs.tension >= FIGHT_DANGER_ZONE;
+  fs.pulseTimer -= dt;
+  if (fs.pulseTimer <= 0) {
+    triggerHaptic(haptic.pulse, haptic.sh * (inDanger ? 1.3 : fs.running ? 0.9 : 0.45));
+    fs.pulseTimer = inDanger ? haptic.iv * 0.45 : fs.running ? haptic.iv * 0.6 : haptic.iv;
   }
-  if (fightState.running) {
-    fightState.runDuration -= dt;
-    if (fightState.runDuration <= 0) {
-      fightState.running = false;
-      fightState.runTimer = randomRange(1, 2.2);
+
+  /* Deterministisk schemaläggning av rusningar — ingen slump. */
+  if (fs.running) {
+    fs.runRemaining -= dt;
+    if (fs.runRemaining <= 0) {
+      fs.running = false;
+      fs.runTimer = FIGHT_RUN_INTERVAL;
       getEl('rw').classList.remove('on');
     }
   } else {
-    fightState.runTimer -= dt;
-    if (fightState.runTimer <= 0 && fightState.stamina > fightState.max * 0.18) {
-      fightState.running = true;
-      fightState.runDuration = randomRange(0.8, 0.9 + st * 1.4);
+    fs.runTimer -= dt;
+    if (fs.runTimer <= 0 && fs.distance > FIGHT_RUN_MIN_DISTANCE) {
+      fs.running = true;
+      fs.runRemaining = fs.runDuration;
       getEl('rw').classList.add('on');
-      triggerHaptic(haptic.pulse, haptic.sh * 1.2);
+      triggerHaptic(haptic.pulse, haptic.sh * 1.2);   /* skärmskak vid rusningsstart */
     }
   }
-  const pull = (0.15 + st * 0.5) * (fightState.running ? 2.3 : 1);
-  const ease = getLevelFactors().ease;
-  if (input > 0.04) {
-    fightState.tension += (pull * 0.9 + input * 0.4) * dt * ease;
-    fightState.stamina -= (0.6 + input * 0.5) * dt;
+
+  /* Spänning, avstånd och passivitet. */
+  if (fs.running) {
+    /* Rusning: spänningen rusar upp. Vevar man mitt i straffas det hårt. */
+    fs.tension += FIGHT_RUN_TENSION_RATE * fs.difficulty * (reeling ? FIGHT_RUN_REEL_PENALTY : 1) * dt;
+    fs.distance += FIGHT_RUN_DISTANCE_RATE * fs.difficulty * dt;
+    fs.slack = 0;   /* under rusning SKA man vara passiv — ingen straffräkning */
+  } else if (reeling) {
+    /* Vev: avståndet minskar men spänningen stiger. */
+    fs.tension += FIGHT_REEL_TENSION_RATE * fs.difficulty * (0.5 + input) * dt;
+    fs.distance -= FIGHT_REEL_DISTANCE_RATE * input * dt;
+    fs.slack = 0;
   } else {
-    fightState.tension -= 1 * dt;
-    if (fightState.running) {
-      fightState.tension += pull * 0.32 * dt * ease;
-      fightState.stamina -= 0.4 * dt;
-    }
+    /* Lugn fas utan vev: spänningen släpper, men passiviteten tickar mot tappad fisk. */
+    fs.tension -= FIGHT_TENSION_DECAY * dt;
+    fs.slack += dt;
   }
-  fightState.tension = Math.max(0, fightState.tension);
-  fightState.stamina = Math.max(0, fightState.stamina);
-  rodBend = 0.25 + fightState.tension * 0.85;
-  hookedFish.near = 1 - fightState.stamina / fightState.max;
-  getEl('tf').style.width = Math.min(100, fightState.tension * 100) + '%';
-  getEl('sf').style.width = (fightState.stamina / fightState.max * 100) + '%';
-  getEl('tp').textContent = Math.round(fightState.tension * 100) + '%';
-  getEl('sp').textContent = Math.round(fightState.stamina / fightState.max * 100) + '%';
-  if (fightState.tension >= 1) return onLineSnap();
-  if (fightState.stamina <= 0) return onFishSurfaced();
+
+  fs.tension = Math.max(0, fs.tension);
+  fs.distance = Math.max(0, Math.min(FIGHT_DISTANCE_MAX, fs.distance));
+  rodBend = 0.25 + fs.tension * 0.85;
+  hookedFish.near = 1 - fs.distance;
+
+  /* HUD: spänning (med röd farozon i grafiken) + avståndsmätare. */
+  const tensionPct = Math.min(100, fs.tension / FIGHT_TENSION_MAX * 100);
+  getEl('tf').style.width = tensionPct + '%';
+  getEl('tp').textContent = Math.round(tensionPct) + '%';
+  getEl('df').style.width = (fs.distance * 100) + '%';
+  getEl('dp').textContent = fs.distance > 0.66 ? 'Långt borta' : fs.distance > 0.25 ? 'På väg in' : 'Nära håven';
+
+  /* Förlust/vinst — helt deterministiskt utifrån spelarens timing. */
+  if (fs.tension >= FIGHT_TENSION_MAX) return onLineSnap();
+  if (fs.slack >= FIGHT_SLACK_MAX) return onFishOff();
+  if (fs.distance <= 0) return onFishSurfaced();
 }
 
 function onLineSnap() {
@@ -716,7 +780,17 @@ function onLineSnap() {
   triggerHaptic([200, 90, 200], 14);
   spawnSplash(hookedFish.x, hookedFish.y, 20);
   endFight();
-  setTimeout(() => showCatchResultModal(false), 420);
+  setTimeout(() => showCatchResultModal(false, 'snap'), 420);
+}
+
+/* Fisken lossnar för att spelaren varit passiv för länge (deterministiskt). */
+function onFishOff() {
+  sceneState.mode = 'result';
+  screenShake = 10;
+  triggerHaptic([120, 60], 10);
+  spawnSplash(hookedFish.x, hookedFish.y, 14);
+  endFight();
+  setTimeout(() => showCatchResultModal(false, 'slack'), 420);
 }
 
 function onFishSurfaced() {
@@ -1185,14 +1259,21 @@ function showToast(message) {
 }
 
 /** Visar modal efter landning eller linbrott. */
-function showCatchResultModal(landed) {
+function showCatchResultModal(landed, reason) {
   const modal = getEl('modal');
   const card = getEl('mcard');
   if (!landed) {
+    const slack = reason === 'slack';
+    const name = hookedFish.species.name.toLowerCase();
+    const weight = formatWeight(hookedFish.weight);
+    const title = slack ? 'Fisken lossnade' : 'Linan gick av';
+    const body = slack
+      ? `En ${name} på ~${weight} kom loss — du var för passiv. Veva in stadigt mellan rusningarna.`
+      : `En ${name} på ~${weight} blev för stark. Släpp veven och ge lina när den rusar.`;
     card.innerHTML = `
       <p class="sub">Fighten</p>
-      <h2 style="color:var(--danger)">Linan gick av</h2>
-      <p style="font-size:13px;color:var(--muted);margin:8px 0 14px">En ${hookedFish.species.name.toLowerCase()} på ~${formatWeight(hookedFish.weight)} blev för stark. Ge mer lina när den rusar.</p>
+      <h2 style="color:var(--danger)">${title}</h2>
+      <p style="font-size:13px;color:var(--muted);margin:8px 0 14px">${body}</p>
       <div class="mbtns"><button class="mb primary" id="ag">Fortsätt</button></div>`;
   } else {
     const fish = hookedFish;
