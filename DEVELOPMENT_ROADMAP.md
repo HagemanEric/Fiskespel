@@ -25,6 +25,7 @@ Stabilisera  Strukturera  Fiskekänsla  Speltest    Exportera   Godot
 | 2 | Strukturera koden | **KLAR** | Tydliga JS-sektioner, balansvärden lätta att hitta |
 | 3 | Färdigställ fiskekänsla och balans | Pågår / nästa | Verifierad känsla, level 1–5 ≈ 25 min |
 | 4 | Speltest med riktiga fiskare | Planerad | Kalibrerade konstanter utifrån extern feedback |
+| 4.5 | Quest- och progressionssystem (designpass) | Planerad (separat) | Designspec för quest-driven progression, maxlevel ~50 |
 | 5 | Exportera reglerna | Planerad | Formler och systemlogik i Godot-vänligt format |
 | 6 | Bygg om i Godot | Planerad | Godot-projekt enligt koncept + prototyp som ritning |
 
@@ -150,6 +151,60 @@ Stabilisera  Strukturera  Fiskekänsla  Speltest    Exportera   Godot
 
 ---
 
+## Fas 4.5 — Quest- och progressionssystem (separat designpass)
+
+**Mål:** Designa ett **quest-drivet progressionssystem** inspirerat av MMO-spel (t.ex. World of Warcraft), där spelaren leds framåt genom uppdrag snarare än enbart fri grind. Detta är ett **större designpass som planeras separat** och påbörjas **EFTER att kärnloopen (kasta, fånga, fight, ekonomi) är validerad och balanserad** i prototypen (dvs. efter Fas 3–4). Här skrivs **design och spec** — implementation hör hemma i Godot (Fas 6).
+
+> ⚠️ **Viktig ordningsföljd:** Lås inte XP-kurva eller upplåsningsnivåer kring quests förrän kärnloopens känsla och tempo är bekräftade. Annars riskerar vi att kalibrera progression mot en loop som fortfarande ändras.
+
+### Designprinciper
+
+- **Startkit + styrd start:** Spelaren börjar med ett enkelt startkit (startspö + mask) och får tidiga uppdrag som lär ut loopen, istället för att kastas in i öppen grind.
+- **Quests som ryggrad:** Progression byggs primärt genom uppdrag (quests), inte bara genom att samla XP/kronor fritt. Grind finns kvar som komplement, men questkedjan är den röda tråden.
+- **MMO-inspirerad känsla:** Tydliga mål, stegvisa belöningar, “nästa quest”-morot — som questloggen i WoW, fast kring fiske.
+
+### Innehåll att designa
+
+| Område | Beskrivning |
+|--------|-------------|
+| **Tidiga quests** | Enkla, lärande mål, t.ex. *“Fånga 10 mörtar”* innan en viss level, *“Fånga din första abborre”*, *“Sälj fångst för X kr”*. |
+| **Questkedjor** | Sekvenser som leder spelaren genom metoder och platser (mete → spinn → vertikal/troll) i takt med att utrustning låses upp. |
+| **Utrustning via quests** | Spön och annan utrustning kan låsas upp **via quests**, inte bara via *level + kronor*. Ett spö kan kräva en avklarad quest som “nyckel”, varefter det ev. fortfarande köps för kronor. |
+| **Belöningstyper** | Quests kan ge XP, kronor, bete, spö-upplåsning, titlar/troféer, samt åtkomst till nya platser. |
+| **Höjd maxlevel** | Riktmärke runt **level 50** (mot dagens lägre tak). Ger plats för en längre, questdriven resa. |
+| **Omskriven XP-kurva** | XP-kurvan (`XP_LEVEL_BASE`, `XP_LEVEL_GROWTH`) skrivs om för att passa ~50 levels och questtempo, så det inte blir en platt grind i mitten. |
+| **Omskrivna upplåsningsnivåer** | Spö-gates justeras kring quest/level-mixen, t.ex. **Bättre metspö ~level 5**, **Spinnspö ~level 10–15**, båt-spön betydligt senare. Värdena sätts som platshållare och kalibreras. |
+
+### Uppgifter
+
+| # | Uppgift |
+|---|---------|
+| 4.5.1 | Definiera quest-datamodell (id, mål, villkor, belöning, förkrav, level-gate) |
+| 4.5.2 | Skissa den tidiga questkedjan (onboarding → första metodbyten → första båt) |
+| 4.5.3 | Designa upplåsningsmatris: vad som gates av **quest**, av **level**, av **kronor**, eller en kombination |
+| 4.5.4 | Föreslå ny XP-kurva och levelband för maxlevel ~50 (platshållarvärden) |
+| 4.5.5 | Mappa om spö-/utrustnings-gates (Bättre metspö ~5, Spinnspö ~10–15, båt-spön senare) |
+| 4.5.6 | Beskriva quest-UI på konceptnivå (questlogg, spårning, “klar”-flöde) — ej webbimplementation |
+
+### Leverabler
+
+- [ ] Designdokument: `specs/quest_system.md` (datamodell, kedjor, belöningar)
+- [ ] Upplåsningsmatris (quest vs level vs kronor)
+- [ ] Förslag på XP-kurva och upplåsningsnivåer för maxlevel ~50 (platshållare)
+
+### Exitkriterier
+
+- Quest-systemet är **specat** tillräckligt för att kunna implementeras i Godot utan att gissa
+- Progressionsbågen (level 1 → ~50) är beskriven med tydliga milstolpar och questberoenden
+- Beslut dokumenterat om vad som **inte** ska prototypas i HTML (questsystemet byggs i Godot, inte i `index.html`)
+
+### Beroenden
+
+- **Fas 3 och Fas 4 klara** — kärnloopen ska vara validerad och balanserad innan progression låses kring quests
+- Påverkar Fas 5 (reglerna som exporteras) och Fas 6 (Godot-implementation)
+
+---
+
 ## Fas 5 — Exportera reglerna
 
 **Mål:** Prototypens JavaScript ska **inte** portas — reglerna ska **dokumenteras** så Godot kan implementera dem rent.
@@ -254,13 +309,15 @@ flowchart LR
     F2[Fas 2\nStrukturera\n✅]
     F3[Fas 3\nFiskekänsla]
     F4[Fas 4\nSpeltest fiskare]
+    F45[Fas 4.5\nQuest- & progression\ndesignpass]
     F5[Fas 5\nExportera regler]
     F6[Fas 6\nGodot]
 
     F1 --> F2
     F2 --> F3
     F3 --> F4
-    F4 --> F5
+    F4 --> F45
+    F45 --> F5
     F5 --> F6
 ```
 
@@ -303,4 +360,4 @@ Uppdatera vid fasövergång:
 
 ---
 
-*Senast uppdaterad: juni 2025. Fas 1–2 markerade KLAR; Fas 3 är nästa aktiva fas.*
+*Senast uppdaterad: juni 2025. Fas 1–2 markerade KLAR; Fas 3 är nästa aktiva fas. Fas 4.5 (quest- och progressionssystem) tillagd som separat designpass efter validerad kärnloop.*
