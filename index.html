@@ -145,7 +145,7 @@
   <div class="topbar">
     <div class="lvl"><div class="lvlb" id="lvlb">1</div></div>
     <div><div class="xpbar"><div class="xpf" id="xpf"></div></div><div class="xpt" id="xpt">0 / 20 XP</div></div>
-    <div class="cur"><div class="kr" id="kr">0 kr</div><div class="pe" id="pe">◈ 0</div></div>
+    <div class="cur"><div class="kr" id="kr">0 FG</div><div class="pe" id="pe">◈ 0</div></div>
   </div>
   <div class="tabbar" role="tablist">
     <button class="tab" role="tab" aria-selected="true" data-s="fiska">Fiska</button>
@@ -199,8 +199,8 @@
   <div id="dbgBody">
     <button type="button" data-dbg="lvl1">+1 level</button>
     <button type="button" data-dbg="lvl5">+5 levels</button>
-    <button type="button" data-dbg="kr1000">+1000 kr</button>
-    <button type="button" data-dbg="kr5000">+5000 kr</button>
+    <button type="button" data-dbg="kr1000">+1000 FG</button>
+    <button type="button" data-dbg="kr5000">+5000 FG</button>
     <button type="button" data-dbg="unlock">Lås upp allt</button>
     <button type="button" data-dbg="reset">Återställ spelet</button>
   </div>
@@ -230,8 +230,9 @@ const GEAR_CAP = 25;              /* Max rod-bonus i procent */
    PLATSHÅLLARE — SPÖ & BETE (kalibreras senare, ändra fritt här)
    ############################################################################ */
 
-/* SPÖN — level då spöt SYNS och går att köpa i shoppen. */
-const ROD_UNLOCK_LEVELS = { start: 1, bettre_met: 2, spinn: 3, vertikal: 15, trolling: 15 };
+/* SPÖN — level då spöt SYNS och går att köpa i shoppen.
+   bettre_met = 5 så att Bättre metspö låses upp ungefär när spelaren har råd (synk med XP/ekonomi). */
+const ROD_UNLOCK_LEVELS = { start: 1, bettre_met: 5, spinn: 3, vertikal: 15, trolling: 15 };
 /* SPÖN — pris i kronor (startspöt ingår gratis i startkitet). */
 const ROD_PRICES        = { start: 0, bettre_met: 150, spinn: 400, vertikal: 1200, trolling: 1600 };
 /* SPÖN — egen maxkastlängd, normaliserad 0..1 (startspöt kortast, båt-spöna längst). */
@@ -279,6 +280,19 @@ const XP_FISH_SIZE_BONUS = 3.0;   /* trofé ger base × (1 + detta); liten ger �
 
 /* Catch & release: släpp ger ALLTID mer XP än att behålla och sälja. */
 const XP_RELEASE_FACTOR = 1.5;    /* släpp-XP = behåll-XP × denna faktor (>1) */
+
+/* ############################################################################
+   PLATSHÅLLARE — EKONOMI (FG/Fiskeguld, kalibreras via speltest)
+   ############################################################################ */
+
+/* Fiskpris i FG = grundpris per art × art-relativ storlek (samma relativa logik
+   som XP — stor fisk för arten ger betydligt mer). Riktmärke: en genomsnittlig
+   nybörjarfisk ≈ 5 FG, så att Bättre metspö + maggot + majs (150+40+60 = 250 FG)
+   tjänas ihop på ca 10 min aktivt fiske om all fisk säljs. Synkar ungefär med
+   att level 5 nås, då Bättre metspö låses upp. */
+const FG_FISH_BASE = { mort: 4, abborre: 6, braxen: 5, gadda: 14, gos: 18 };  /* liten fisk för arten */
+const FG_FISH_BASE_DEFAULT = 5;   /* fallback om art saknas i tabellen */
+const FG_FISH_SIZE_BONUS = 3.0;   /* trofé ger base × (1 + detta); liten ger ≈ base */
 
 /** Beräknar XP som krävs för att nå nästa level. Mål: lvl 1→5 ~25 min aktivt fiske. */
 function xpRequiredForLevel(level) {
@@ -1111,11 +1125,18 @@ function computeFishXp(fish) {
   return Math.round(base * (1 + XP_FISH_SIZE_BONUS * getSpeciesRelativeSize(fish)));
 }
 
+/* Försäljningspris i FG: art-bas × art-relativ storlek (samma logik som XP).
+   Liten nybörjarfisk ≈ 5 FG, stor fisk för arten betydligt mer. */
+function computeFishPrice(fish) {
+  const base = FG_FISH_BASE[fish.speciesId] != null ? FG_FISH_BASE[fish.speciesId] : FG_FISH_BASE_DEFAULT;
+  return Math.round(base * (1 + FG_FISH_SIZE_BONUS * getSpeciesRelativeSize(fish)));
+}
+
 function processLandingRewards() {
   const fish = hookedFish;
   const logEntry = gameState.log[fish.speciesId];
   const sp = fish.species;
-  const sellValue = Math.round(sp.pricePerKg * fish.weight);
+  const sellValue = computeFishPrice(fish);
   let xpGain = computeFishXp(fish);
   const rewardLines = [];
 
@@ -1123,7 +1144,7 @@ function processLandingRewards() {
     logEntry.seen = true;
     xpGain += 15;
     gameState.kronor += 10;
-    rewardLines.push(['Ny art i loggen', '+15 XP, +10 kr']);
+    rewardLines.push(['Ny art i loggen', '+15 XP, +10 FG']);
   }
   logEntry.count++;
   const hadClass = logEntry.sizeClasses[fish.sizeClass];
@@ -1292,7 +1313,7 @@ function renderCatchLog() {
 
 function updateStatusBar() {
   getEl('lvlb').textContent = gameState.level;
-  getEl('kr').textContent = Math.round(gameState.kronor).toLocaleString('sv-SE') + ' kr';
+  getEl('kr').textContent = Math.round(gameState.kronor).toLocaleString('sv-SE') + ' FG';
   getEl('pe').textContent = '◈ ' + gameState.pearls;
   const needed = xpRequiredForLevel(gameState.level);
   getEl('xpf').style.width = Math.min(100, gameState.xp / needed * 100) + '%';
@@ -1386,10 +1407,10 @@ function showCatchResultModal(landed, reason) {
       <div class="wt">${formatWeight(fish.weight)}</div>
       <span class="tag" style="background:${isBig ? 'var(--gold)22' : 'var(--cyan)22'};color:${isBig ? 'var(--gold)' : 'var(--cyan)'};border:1px solid ${isBig ? 'var(--gold)' : 'var(--cyan)'}">${isBig ? 'Storfångst' : 'Fin fisk'}</span>
       <div class="rw">${rewardHtml}
-        <div class="rl" style="border-top:1px solid var(--line);margin-top:4px;padding-top:6px"><span>Försäljning</span><span class="b" style="color:var(--copper-bright)">${fish.value} kr</span></div>
+        <div class="rl" style="border-top:1px solid var(--line);margin-top:4px;padding-top:6px"><span>Försäljning</span><span class="b" style="color:var(--copper-bright)">${fish.value} FG</span></div>
       </div>
       <div class="mbtns">
-        <button class="mb primary" id="keep">Behåll · ${fish.value} kr · +${fish.xp} XP</button>
+        <button class="mb primary" id="keep">Behåll · ${fish.value} FG · +${fish.xp} XP</button>
         <button class="mb" id="rel">Släpp · +${Math.round(fish.xp * XP_RELEASE_FACTOR)} XP</button>
       </div>`;
   }
@@ -1412,7 +1433,7 @@ function showCatchResultModal(landed, reason) {
     getEl('keep').onclick = () => {
       gameState.kronor += hookedFish.value;
       grantXp(hookedFish.xp);
-      closeModal('+' + hookedFish.value + ' kr · +' + hookedFish.xp + ' XP');
+      closeModal('+' + hookedFish.value + ' FG · +' + hookedFish.xp + ' XP');
     };
     getEl('rel').onclick = () => {
       /* Släpp ger alltid mer XP än att behålla (faktor > 1), men ingen peng. */
@@ -1915,7 +1936,7 @@ function renderShopHero() {
 function buildShopCtaHtml(price, currencyKind, owned, equipped) {
   const priceHtml = price === 0
     ? '<span class="sprice free">Gratis</span>'
-    : `<span class="sprice ${currencyKind}">${currencyKind === 'kr' ? price.toLocaleString('sv-SE') + ' kr' : '◈ ' + price}</span>`;
+    : `<span class="sprice ${currencyKind}">${currencyKind === 'kr' ? price.toLocaleString('sv-SE') + ' FG' : '◈ ' + price}</span>`;
   let btn;
   if (equipped) btn = '<button class="sbuy equipped" disabled>✓ Utrustad</button>';
   else if (owned) btn = '<button class="sbuy equip" id="sb" data-a="equip">Utrusta</button>';
@@ -1923,7 +1944,7 @@ function buildShopCtaHtml(price, currencyKind, owned, equipped) {
     const canAfford = currencyKind === 'kr' ? gameState.kronor >= price : gameState.pearls >= price;
     btn = canAfford
       ? '<button class="sbuy primary" id="sb" data-a="buy">Köp</button>'
-      : `<button class="sbuy cant" disabled>${currencyKind === 'kr' ? 'För lite kr' : 'För få ◈'}</button>`;
+      : `<button class="sbuy cant" disabled>${currencyKind === 'kr' ? 'För lite FG' : 'För få ◈'}</button>`;
   }
   return `<div class="scta">${priceHtml}${btn}</div>`;
 }
@@ -1938,13 +1959,13 @@ function buildBaitCtaHtml(bait, owned, equipped) {
   const price = BAIT_PRICES[bait.id];
   const priceHtml = price === 0
     ? '<span class="sprice free">Gratis</span>'
-    : `<span class="sprice kr">${price.toLocaleString('sv-SE')} kr</span>`;
+    : `<span class="sprice kr">${price.toLocaleString('sv-SE')} FG</span>`;
   let btn;
   if (equipped) btn = '<button class="sbuy equipped" disabled>✓ Vald</button>';
   else if (owned) btn = '<button class="sbuy equip" id="sb" data-a="equip">Välj</button>';
   else btn = gameState.kronor >= price
     ? '<button class="sbuy primary" id="sb" data-a="buy">Köp</button>'
-    : '<button class="sbuy cant" disabled>För lite kr</button>';
+    : '<button class="sbuy cant" disabled>För lite FG</button>';
   return `<div class="scta">${priceHtml}${btn}</div>`;
 }
 
@@ -2021,19 +2042,19 @@ function renderShelf() {
     isOwned = it => gameState.ownedRods.has(it.id);
     isLocked = it => !isRodUnlocked(it);
     lockLabel = it => 'Lvl ' + it.unlockLevel;
-    priceLabel = it => it.price === 0 ? 'Gratis' : it.price.toLocaleString('sv-SE') + ' kr';
+    priceLabel = it => it.price === 0 ? 'Gratis' : it.price.toLocaleString('sv-SE') + ' FG';
   } else if (cat === 'baits') {
     list = BAIT_ORDER.map(id => BAITS[id]); selected = gameState.selBait;
     isOwned = it => gameState.ownedBaits.has(it.id);
     isLocked = it => !ownsRodForMethod(it.method);
     lockLabel = () => 'Kräver spö';
-    priceLabel = it => BAIT_PRICES[it.id] === 0 ? 'Gratis' : BAIT_PRICES[it.id].toLocaleString('sv-SE') + ' kr';
+    priceLabel = it => BAIT_PRICES[it.id] === 0 ? 'Gratis' : BAIT_PRICES[it.id].toLocaleString('sv-SE') + ' FG';
   } else if (cat === 'boat') {
     list = [BOAT]; selected = BOAT.id;
     isOwned = () => gameState.ownedBoat;
     isLocked = () => !isBoatUnlocked();
     lockLabel = it => 'Lvl ' + it.unlockLevel;
-    priceLabel = it => it.price.toLocaleString('sv-SE') + ' kr';
+    priceLabel = it => it.price.toLocaleString('sv-SE') + ' FG';
   } else {
     list = SKINS; selected = gameState.selSkin;
     isOwned = it => gameState.ownedSkins.has(it.id);
