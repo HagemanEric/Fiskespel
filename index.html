@@ -270,14 +270,16 @@ function xpRequiredForLevel(level) {
 
 /* ############################################################################
    PLATSHÅLLARE — FIGHT (kalibreras senare)
-   Allt deterministiskt: fiskens storlek vs spelarens level styr svårigheten,
-   ingen slump avgör om man tappar fisken.
+   Allt deterministiskt: svårigheten beror på hur stor fisken är i förhållande
+   till SIN EGEN ARTS spann (liten → trofé). Spelarens level spelar ingen roll.
+   Ingen slump avgör om man tappar fisken.
    ############################################################################ */
 
-/* Svårighet: difficulty = (BASE + SIZE_FACTOR × fiskens styrka 0..1) × (1 − LEVEL_RELIEF × levelandel). */
-const FIGHT_DIFFICULTY_BASE = 0.6;      /* grundsvårighet för minsta fisk */
-const FIGHT_SIZE_FACTOR     = 0.9;      /* hur mycket storlek ökar svårigheten */
-const FIGHT_LEVEL_RELIEF    = 0.4;      /* hur mycket full level sänker svårigheten (0..1) */
+/* Svårighet: difficulty = MIN + (MAX − MIN) × relativStorlek^EXPONENT.
+   relativStorlek = var fiskens vikt ligger i artens spann (artens minsta → rekord). */
+const FIGHT_DIFFICULTY_MIN = 0.12;      /* liten fisk för sin art → nästan ingen fight */
+const FIGHT_DIFFICULTY_MAX = 1.5;       /* trofé för sin art → full fight med rusningar */
+const FIGHT_SIZE_EXPONENT  = 1.3;       /* kurva — högre gör små/medel-fiskar ännu lättare */
 
 /* Avstånd (1 = långt borta, 0 = i håven). */
 const FIGHT_START_DISTANCE     = 0.90;  /* startavstånd när fighten börjar */
@@ -569,12 +571,17 @@ function getLevelFactors() {
   };
 }
 
-/** Deterministisk fightsvårighet: större fisk vs spelarens level → spänning stiger
-    snabbare och rusningar blir hårdare. Ingen slump inblandad. */
+/** Deterministisk fightsvårighet baserad på fiskens storlek RELATIVT sin egen art.
+    Liten fisk för arten → trivial fight; trofé → full fight. Level spelar ingen roll. */
 function getFightDifficulty(fish) {
-  const p = Math.min(1, (gameState.level - 1) / LEVEL_SKILL_SPAN);
-  const base = FIGHT_DIFFICULTY_BASE + FIGHT_SIZE_FACTOR * fish.strength;
-  return base * (1 - FIGHT_LEVEL_RELIEF * p);
+  const sp = fish.species;
+  /* Artens egna gränser ur ARTDATA: minsta tänkbara → rekord/största. */
+  const minWeight = sp.weightClasses.liten[0];
+  const maxWeight = Math.max(sp.weightClasses.stor[1], sp.realRecordKg);
+  /* Var fiskens vikt ligger i artens spann (0 = pytteliten, 1 = trofé). */
+  const relativeSize = Math.max(0, Math.min(1, (fish.weight - minWeight) / (maxWeight - minWeight)));
+  const shaped = Math.pow(relativeSize, FIGHT_SIZE_EXPONENT);
+  return FIGHT_DIFFICULTY_MIN + (FIGHT_DIFFICULTY_MAX - FIGHT_DIFFICULTY_MIN) * shaped;
 }
 
 /* =============================================================================
