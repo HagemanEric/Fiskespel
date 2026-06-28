@@ -260,12 +260,29 @@ const BAIT_SPECIES_BIAS = {
 const BOAT_UNLOCK_LEVEL = 15;
 const BOAT_PRICE = 2500;
 
-const XP_BASE = 14;               /* Huvudreglage för leveltempo (höj = långsammare) */
 const LEVEL_SKILL_SPAN = 19;      /* Antal level till full skicklighet (lf) */
+
+/* ############################################################################
+   PLATSHÅLLARE — XP (kalibreras via speltest)
+   ############################################################################ */
+
+/* XP-kurva: kravet växer exponentiellt så det blir brantare uppåt.
+   krav(level) = XP_LEVEL_BASE × XP_LEVEL_GROWTH^(level−1). */
+const XP_LEVEL_BASE   = 100;      /* XP för level 1→2 */
+const XP_LEVEL_GROWTH = 1.4;      /* tillväxtfaktor per level (högre = brantare) */
+
+/* XP per fångad fisk: grund-XP per art × art-relativ storlek (samma relativa
+   logik som fighten — stor fisk för arten ger mer XP). */
+const XP_FISH_BASE = { mort: 5, abborre: 9, braxen: 8, gadda: 22, gos: 30 };  /* liten fisk för arten */
+const XP_FISH_BASE_DEFAULT = 6;   /* fallback om art saknas i tabellen */
+const XP_FISH_SIZE_BONUS = 3.0;   /* trofé ger base × (1 + detta); liten ger ≈ base */
+
+/* Catch & release: släpp ger ALLTID mer XP än att behålla och sälja. */
+const XP_RELEASE_FACTOR = 1.5;    /* släpp-XP = behåll-XP × denna faktor (>1) */
 
 /** Beräknar XP som krävs för att nå nästa level. Mål: lvl 1→5 ~25 min aktivt fiske. */
 function xpRequiredForLevel(level) {
-  return Math.round(XP_BASE * Math.pow(level, 1.4));
+  return Math.round(XP_LEVEL_BASE * Math.pow(XP_LEVEL_GROWTH, level - 1));
 }
 
 /* ############################################################################
@@ -1078,12 +1095,28 @@ function updateFishingScene(dt, now) {
    ============================================================================= */
 
 /** Beräknar XP och belöningar när fisken landats — uppdaterar logg och valutor indirekt. */
+/* Hur stor fisken är inom sin egen arts spann (0 = pytteliten, 1 = trofé).
+   Samma art-relativa logik som fightsvårigheten använder. */
+function getSpeciesRelativeSize(fish) {
+  const sp = fish.species;
+  const minWeight = sp.weightClasses.liten[0];
+  const maxWeight = Math.max(sp.weightClasses.stor[1], sp.realRecordKg);
+  return Math.max(0, Math.min(1, (fish.weight - minWeight) / (maxWeight - minWeight)));
+}
+
+/* Grund-XP för en fångad fisk: art-bas × art-relativ storlek. Liten mört ≈ 5 XP,
+   stor gädda betydligt mer. (Milstolpsbonusar läggs på i processLandingRewards.) */
+function computeFishXp(fish) {
+  const base = XP_FISH_BASE[fish.speciesId] != null ? XP_FISH_BASE[fish.speciesId] : XP_FISH_BASE_DEFAULT;
+  return Math.round(base * (1 + XP_FISH_SIZE_BONUS * getSpeciesRelativeSize(fish)));
+}
+
 function processLandingRewards() {
   const fish = hookedFish;
   const logEntry = gameState.log[fish.speciesId];
   const sp = fish.species;
   const sellValue = Math.round(sp.pricePerKg * fish.weight);
-  let xpGain = Math.round(sellValue * 0.5) + 5;
+  let xpGain = computeFishXp(fish);
   const rewardLines = [];
 
   if (!logEntry.seen) {
@@ -1356,8 +1389,8 @@ function showCatchResultModal(landed, reason) {
         <div class="rl" style="border-top:1px solid var(--line);margin-top:4px;padding-top:6px"><span>Försäljning</span><span class="b" style="color:var(--copper-bright)">${fish.value} kr</span></div>
       </div>
       <div class="mbtns">
-        <button class="mb primary" id="keep">Behåll · ${fish.value} kr</button>
-        <button class="mb" id="rel">Släpp · +XP</button>
+        <button class="mb primary" id="keep">Behåll · ${fish.value} kr · +${fish.xp} XP</button>
+        <button class="mb" id="rel">Släpp · +${Math.round(fish.xp * XP_RELEASE_FACTOR)} XP</button>
       </div>`;
   }
   modal.classList.add('on');
@@ -1382,8 +1415,10 @@ function showCatchResultModal(landed, reason) {
       closeModal('+' + hookedFish.value + ' kr · +' + hookedFish.xp + ' XP');
     };
     getEl('rel').onclick = () => {
-      grantXp(hookedFish.xp + 8);
-      closeModal('Släppt · +' + (hookedFish.xp + 8) + ' XP');
+      /* Släpp ger alltid mer XP än att behålla (faktor > 1), men ingen peng. */
+      const releaseXp = Math.round(hookedFish.xp * XP_RELEASE_FACTOR);
+      grantXp(releaseXp);
+      closeModal('Släppt · +' + releaseXp + ' XP');
     };
   }
 }
