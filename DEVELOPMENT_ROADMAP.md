@@ -26,6 +26,7 @@ Stabilisera  Strukturera  Fiskekänsla  Speltest    Exportera   Godot
 | 3 | Färdigställ fiskekänsla och balans | Pågår / nästa | Verifierad känsla, level 1–5 ≈ 25 min |
 | 4 | Speltest med riktiga fiskare | Planerad | Kalibrerade konstanter utifrån extern feedback |
 | 4.5 | Quest- och progressionssystem (designpass) | Planerad (separat) | Designspec för quest-driven progression, maxlevel ~50 |
+| 4.6 | Onboarding-modul (styrd start) | Planerad (separat) | Styrd förstagångsupplevelse som lär ut kärnmekaniken före lansering |
 | 5 | Exportera reglerna | Planerad | Formler och systemlogik i Godot-vänligt format |
 | 6 | Bygg om i Godot | Planerad | Godot-projekt enligt koncept + prototyp som ritning |
 
@@ -205,6 +206,60 @@ Stabilisera  Strukturera  Fiskekänsla  Speltest    Exportera   Godot
 
 ---
 
+## Fas 4.6 — Onboarding-modul (styrd start)
+
+**Mål:** Bygga en **styrd förstagångsupplevelse** som körs när spelaren skapar konto och startar spelet första gången. Spelaren leds steg för steg genom kärnmekaniken — **kast, hugg, fight, sälj** — och fångar sina första fiskar i en kontrollerad miljö **innan** hen släpps in i det riktiga spelet. Detta är ett **eget bygge som planeras separat** och påbörjas **EFTER att kärnloopen (kasta, fånga, fight, ekonomi) är validerad och balanserad** i prototypen. Onboardingen byggs i **Godot** (Fas 6), inte i `index.html` — här designas och specas flödet.
+
+> 🎯 **Designprincip:** Inlärningen ska ske **i onboardingen**, inte genom att de första riktiga fiskarna ger sämre belöning. När spelaren väl är inne i det riktiga spelet ska fångster belönas fullt ut från start — onboardingen, inte en nerf på tidiga belöningar, är det som lär ut loopen.
+
+### Designprinciper
+
+- **Styrd, inte öppen:** Vid förstagångsstart körs ett linjärt, handhållet flöde där spelaren hänvisas till exakt vad hen ska göra härnäst, steg för steg.
+- **Lär genom att göra:** Spelaren klickar runt och fångar sina **första fiskar** i en kontrollerad miljö där varje moment introduceras ett i taget (kasta → få hugg → fighta → landa → sälj).
+- **Kontrollerad miljö:** Onboardingen kör i ett tryggt, förutsägbart läge (t.ex. garanterade hugg, lugna fightar) så att momenten alltid kan slutföras — ingen risk att fastna på otur.
+- **Ren övergång:** När onboardingen är klar släpps spelaren in i det riktiga spelet med **fulla, oförändrade belöningar** — inga inlärningsstraff på de första riktiga fångsterna.
+
+### Innehåll att designa
+
+| Steg | Vad spelaren lär sig |
+|------|----------------------|
+| **Start/konto** | Förstagångsflagga sätts vid kontoskapande; onboardingen triggas en gång. |
+| **Kast** | Hur man laddar och släpper kastet (kraftmätare, sweet spot), med tydlig prompt. |
+| **Hugg** | Hur ett napp ser/känns ut och hur man krokar (hookset-fönster, haptik). |
+| **Fight** | Spänning vs avstånd, ge lina vid rusning, reva in — i en lugn, garanterat vinnbar fight. |
+| **Landning & sälj** | Landa fisken, se belöning, och sälja/behålla i ekonomiloopen. |
+| **Övergång** | Avslut som tydligt markerar “nu börjar det riktiga spelet”. |
+
+### Uppgifter
+
+| # | Uppgift |
+|---|---------|
+| 4.6.1 | Definiera onboarding-flödet som en stegsekvens (steg, prompt, slutvillkor per steg) |
+| 4.6.2 | Speca förstagångs-trigger och hur den lagras (körs en gång per konto) |
+| 4.6.3 | Designa den kontrollerade miljön (garanterade hugg, dämpad fight) skild från riktigt spelläge |
+| 4.6.4 | Skissa UI för guidning: highlights, pekare/promptar, “nästa steg”-flöde — på konceptnivå |
+| 4.6.5 | Bekräfta att belöningar i riktigt spel är **oförändrade** efter onboarding (ingen nerf på tidiga fångster) |
+| 4.6.6 | Definiera hopp över/återspela onboarding (t.ex. för test eller nytt konto) |
+
+### Leverabler
+
+- [ ] Designdokument: `specs/onboarding.md` (stegsekvens, triggers, kontrollerad miljö, övergång)
+- [ ] Flödesskiss/wireframes för guidningen på konceptnivå
+- [ ] Beslut dokumenterat: onboarding byggs i Godot, inte i `index.html`
+
+### Exitkriterier
+
+- Onboarding-flödet är **specat** tillräckligt för implementation i Godot utan att gissa
+- Tydligt definierat hur kärnmekaniken (kast, hugg, fight, sälj) introduceras steg för steg
+- Bekräftat att inlärningen ligger i onboardingen och **inte** i sänkta belöningar på de första riktiga fiskarna
+
+### Beroenden
+
+- **Fas 3 och Fas 4 klara** — kärnloopen ska vara validerad innan vi bygger inlärning ovanpå den
+- Hör ihop med Fas 4.5 (questkedjans första steg kan ta vid där onboardingen slutar) och implementeras i Fas 6 (Godot)
+
+---
+
 ## Fas 5 — Exportera reglerna
 
 **Mål:** Prototypens JavaScript ska **inte** portas — reglerna ska **dokumenteras** så Godot kan implementera dem rent.
@@ -310,6 +365,7 @@ flowchart LR
     F3[Fas 3\nFiskekänsla]
     F4[Fas 4\nSpeltest fiskare]
     F45[Fas 4.5\nQuest- & progression\ndesignpass]
+    F46[Fas 4.6\nOnboarding\nstyrd start]
     F5[Fas 5\nExportera regler]
     F6[Fas 6\nGodot]
 
@@ -317,7 +373,8 @@ flowchart LR
     F2 --> F3
     F3 --> F4
     F4 --> F45
-    F45 --> F5
+    F45 --> F46
+    F46 --> F5
     F5 --> F6
 ```
 
@@ -360,4 +417,4 @@ Uppdatera vid fasövergång:
 
 ---
 
-*Senast uppdaterad: juni 2025. Fas 1–2 markerade KLAR; Fas 3 är nästa aktiva fas. Fas 4.5 (quest- och progressionssystem) tillagd som separat designpass efter validerad kärnloop.*
+*Senast uppdaterad: juni 2025. Fas 1–2 markerade KLAR; Fas 3 är nästa aktiva fas. Fas 4.5 (quest- och progressionssystem) och Fas 4.6 (onboarding-modul) tillagda som separata pass efter validerad kärnloop.*
