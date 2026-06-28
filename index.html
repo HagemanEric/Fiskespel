@@ -308,30 +308,37 @@ function xpRequiredForLevel(level) {
 
 /* Svårighet: difficulty = MIN + (MAX − MIN) × relativStorlek^EXPONENT.
    relativStorlek = var fiskens vikt ligger i artens spann (artens minsta → rekord). */
-const FIGHT_DIFFICULTY_MIN = 0.12;      /* liten fisk för sin art → nästan ingen fight */
-const FIGHT_DIFFICULTY_MAX = 1.5;       /* trofé för sin art → full fight med rusningar */
-const FIGHT_SIZE_EXPONENT  = 1.3;       /* kurva — högre gör små/medel-fiskar ännu lättare */
+const FIGHT_DIFFICULTY_MIN = 0.12;      /* GOLV — liten fisk för sin art förblir trivial (rör ej) */
+const FIGHT_DIFFICULTY_MAX = 2.2;       /* TAK — trofé för sin art når en rejäl fight (höjt från 1.5) */
+const FIGHT_SIZE_EXPONENT  = 1.45;      /* kurva — höjt så svårigheten stiger brantare mot stor fisk;
+                                           kombinerat med högre TAK blir medel-till-stor tydligt svårare
+                                           medan småfisk (relativStorlek ≈ 0) ligger kvar nära golvet */
 
 /* Avstånd (1 = långt borta, 0 = i håven). */
 const FIGHT_START_DISTANCE     = 0.90;  /* startavstånd när fighten börjar */
 const FIGHT_DISTANCE_MAX       = 1.0;   /* tak — fisken kan inte dra ut mer lina än så */
-const FIGHT_REEL_DISTANCE_RATE = 0.16;  /* avstånd in per sek vid full vev */
+const FIGHT_REEL_DISTANCE_RATE = 0.13;  /* avstånd in per sek vid full vev (sänkt → hela fighten något långsammare) */
 
 /* Linspänning (0..1; vid TENSION_MAX brister linan). */
 const FIGHT_TENSION_MAX       = 1.0;    /* spänning då linan går av */
 const FIGHT_DANGER_ZONE       = 0.84;   /* röd farozon börjar här (matchar HUD-grafiken) */
-const FIGHT_REEL_TENSION_RATE = 0.30;   /* spänning per sek vid vev (× difficulty × vevkraft) */
+const FIGHT_REEL_TENSION_RATE = 0.22;   /* spänning per sek vid vev (× difficulty × vevkraft);
+                                           koeff. sänkt men difficulty-taket höjt → stor fisk grindar
+                                           ändå hårdare och måste pumpas in, småfisk påverkas knappt */
 const FIGHT_TENSION_DECAY     = 0.55;   /* spänning som släpper per sek när man ger lina */
 const FIGHT_REEL_THRESHOLD    = 0.04;   /* dödzon — vevinput under detta räknas som passiv */
 
 /* Rusningar (fisken drar; spänningen rusar upp → släpp veven tills den lugnar sig). */
 const FIGHT_RUN_FIRST_DELAY    = 2.2;   /* sek innan första rusningen */
-const FIGHT_RUN_INTERVAL       = 3.2;   /* sek mellan rusningar (deterministiskt) */
-const FIGHT_RUN_DURATION_BASE  = 0.8;   /* grundlängd på en rusning (sek) */
-const FIGHT_RUN_DURATION_SCALE = 0.9;   /* extra rusningslängd × difficulty */
-const FIGHT_RUN_TENSION_RATE   = 0.42;  /* spänning per sek under rusning (× difficulty) */
-const FIGHT_RUN_REEL_PENALTY   = 2.2;   /* extra spänning om man vevar mitt i en rusning */
-const FIGHT_RUN_DISTANCE_RATE  = 0.14;  /* avstånd fisken drar ut per sek under rusning (× difficulty) */
+const FIGHT_RUN_INTERVAL       = 3.6;   /* sek mellan rusningar (höjt → mer vevtid, lugnare tempo) */
+const FIGHT_RUN_DURATION_BASE  = 0.7;   /* grundlängd på en rusning (sek) */
+const FIGHT_RUN_DURATION_SCALE = 0.28;  /* extra rusningslängd × difficulty (sänkt så trofé-rusningar inte blir orimligt långa vid högt TAK) */
+const FIGHT_RUN_TENSION_RATE   = 0.15;  /* spänning per sek under rusning utan vev (× difficulty);
+                                           sänkt så att SLÄPPA under en rusning överlever även på trofé,
+                                           medan vev mitt i rusningen straffas hårt (se penalty nedan) */
+const FIGHT_RUN_REEL_PENALTY   = 3.0;   /* extra spänning om man vevar mitt i en rusning (höjt → går inte att hålla inne veven blint på en stor fisk) */
+const FIGHT_RUN_DISTANCE_RATE  = 0.05;  /* avstånd fisken drar ut per sek under rusning (× difficulty);
+                                           sänkt så avståndsbudgeten går ihop och stor fisk förblir vinnbar */
 const FIGHT_RUN_MIN_DISTANCE   = 0.12;  /* inga nya rusningar när fisken är så här nära */
 
 /* Passivitet — för länge utan att veva när fisken är lugn = fisken lossnar. */
