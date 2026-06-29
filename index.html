@@ -421,9 +421,9 @@ function triggerHaptic(pattern, shakeAmount) {
 
 /* grow = antal level efter unlock innan fullt storleksspann. Lågt = snabb mognad. */
 const SPECIES = {
-  mort:    { name: 'Mört',    colorVar: '--mort',    isPredator: false, density: 40, unlockLevel: 1,  pricePerKg: 5,   weightClasses: { liten: [0.02, 0.1],  bra: [0.1, 0.3],  stor: [0.3, 1] },    realRecordKg: 1.0,  growthLevels: 18 },
+  mort:    { name: 'Mört',    colorVar: '--mort',    isPredator: false, density: 40, unlockLevel: 1,  pricePerKg: 5,   weightClasses: { liten: [0.02, 0.1],  bra: [0.1, 0.3],  stor: [0.3, 1] },    realRecordKg: 1.0,  growthLevels: 18, meteOnly: true },
   abborre: { name: 'Abborre', colorVar: '--abborre', isPredator: true,  density: 30, unlockLevel: 1,  pricePerKg: 18,  weightClasses: { liten: [0.05, 0.2],  bra: [0.2, 0.7],  stor: [0.7, 2.5] }, realRecordKg: 2.6,  growthLevels: 28 },
-  braxen:  { name: 'Braxen',  colorVar: '--braxen',  isPredator: false, density: 18, unlockLevel: 3,  pricePerKg: 8,   weightClasses: { liten: [0.2, 0.8],   bra: [0.8, 3],    stor: [3, 7] },     realRecordKg: 7.0,  growthLevels: 25 },
+  braxen:  { name: 'Braxen',  colorVar: '--braxen',  isPredator: false, density: 18, unlockLevel: 3,  pricePerKg: 8,   weightClasses: { liten: [0.2, 0.8],   bra: [0.8, 3],    stor: [3, 7] },     realRecordKg: 7.0,  growthLevels: 25, meteOnly: true },
   gadda:   { name: 'Gädda',   colorVar: '--gadda',   isPredator: true,  density: 9,  unlockLevel: 5,  pricePerKg: 40,  weightClasses: { liten: [0.5, 2],     bra: [2, 6],      stor: [6, 15] },    realRecordKg: 15,   growthLevels: 30 },
   gos:     { name: 'Gös',     colorVar: '--gos',     isPredator: true,  density: 3,  unlockLevel: 12, pricePerKg: 120, weightClasses: { liten: [0.3, 1],    bra: [1, 3],      stor: [3, 8] },     realRecordKg: 8,    growthLevels: 28 },
 };
@@ -560,6 +560,14 @@ function getCurrentMechanic() { return METHODS[gameState.method].mechanic; }
 function getAvailableSpecies() { return SPECIES_ORDER.filter(id => gameState.level >= SPECIES[id].unlockLevel); }
 function getRodById(id) { return RODS.find(r => r.id === id); }
 
+/* HÅRD METOD-SPÄRR (skild från de mjuka speciesMult-värdena):
+   arter med meteOnly=true kan ENBART fångas med mete. På spinn/vertikal/troll blir
+   deras råpoäng NOLL — de kan aldrig nappa där, oavsett upplägg eller level.
+   Lägg till fler mete-låsta vitfiskar genom att sätta meteOnly: true i deras artdata. */
+function isSpeciesMethodLocked(speciesId, methodId) {
+  return SPECIES[speciesId].meteOnly === true && methodId !== 'mete';
+}
+
 /* En metod kräver att man äger ett spö som låser upp den. */
 function ownsRodForMethod(methodId) {
   return RODS.some(r => gameState.ownedRods.has(r.id) && r.methods.includes(methodId));
@@ -660,6 +668,8 @@ function getFightDifficulty(fish) {
     denna summa styr nappfrekvensen, som betet alltså aldrig påverkar. */
 function computeRawWeight(speciesId) {
   const sp = SPECIES[speciesId];
+  /* Hård metod-spärr: en spärrad art ger NOLL råpoäng och utesluts helt ur dragningen. */
+  if (isSpeciesMethodLocked(speciesId, gameState.method)) return 0;
   const methodMult = METHODS[gameState.method].speciesMult[speciesId];
   const timeMult = TIMES[gameState.time].speciesMult[speciesId];
   const spotMult = SPOTS[gameState.spot].speciesMult[speciesId];
@@ -720,11 +730,16 @@ function computeSizeReach(speciesId) {
 function pickSpeciesAndSize() {
   const { rawWeights, sum } = computeBiteOdds();
   let roll = Math.random() * sum;
-  let pickId = rawWeights[0].id;
+  /* Endast arter med positiv råpoäng kan dras — spärrade (poäng = 0) utesluts helt. */
+  let pickId = null;
   for (const entry of rawWeights) {
+    if (entry.weight <= 0) continue;
     roll -= entry.weight;
-    if (roll <= 0) { pickId = entry.id; break; }
+    pickId = entry.id;
+    if (roll <= 0) break;
   }
+  /* Skyddsnät om allt skulle vara spärrat (då är nappchansen ändå ~0). */
+  if (pickId == null) { const fallback = rawWeights.find(e => e.weight > 0); pickId = fallback ? fallback.id : rawWeights[0].id; }
   const sp = SPECIES[pickId];
   const quality = computeSetupQuality(pickId);
   const sizeReach = computeSizeReach(pickId);
