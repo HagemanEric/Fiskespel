@@ -98,6 +98,10 @@
   .cnote{font-size:11px;color:var(--muted);background:#0b1f27;border:1px solid var(--line);border-radius:10px;padding:9px;line-height:1.5}.cnote b{color:var(--gold)}
   .ptag{font-size:11px;color:var(--muted);margin-top:9px}.ptag b{color:var(--cyan)}
   .scta{display:flex;align-items:center;gap:10px;margin-top:12px}
+  .qstep{display:flex;align-items:center;gap:14px;margin-top:12px}
+  .qbtn{width:42px;height:42px;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:var(--ink);font-size:22px;font-weight:700;line-height:1;cursor:pointer}
+  .qbtn:disabled{opacity:.35;cursor:default}
+  .qn{font-family:'IBM Plex Mono';font-weight:600;font-size:20px;min-width:48px;text-align:center}
   .sprice{font-family:'IBM Plex Mono';font-weight:600;font-size:17px}.sprice.kr{color:var(--copper-bright)}.sprice.pe{color:var(--gold)}.sprice.free{color:var(--reed)}
   .sbuy{margin-left:auto;border:none;border-radius:11px;padding:12px 20px;font-weight:700;font-size:14px;cursor:pointer}
   .sbuy.primary{background:linear-gradient(180deg,var(--copper-bright),var(--copper));color:#26190a}.sbuy.equip{background:var(--cyan);color:#04222a}
@@ -289,7 +293,12 @@ const BAIT_BIAS_CAP = 0.10;        /* ±10 % max förskjutning av artvikt */
    Endast mete-bete (consumable: true i BAITS) förbrukas; övriga beten ägs för alltid. */
 const BAIT_START_COUNTS      = { mask: 20 };  /* startkit: antal per förbrukningsbart bete (mask ×20) */
 const BAIT_CONSUME_PER_CATCH = 1;             /* antal bete som dras per LANDAD mete-fångst */
-/* BETE — pris i kronor (metodens startbete är gratis). */
+/* BETE — köp i antal (steg 2): pris per styck och köpsteg för förbrukningsbart mete-bete. */
+const BAIT_UNIT_PRICE = 1;   /* FG per styck för förbrukningsbart mete-bete (10 st = 10 FG) */
+const BAIT_BUY_STEP   = 10;  /* köpsteg i mängdväljaren (10 → 20 → 30 ...) */
+const BAIT_BUY_MIN    = 10;  /* minsta köp / golv för mängdväljaren */
+/* BETE — engångspris i FG för EVIGA (ej förbrukningsbara) beten. Förbrukningsbara
+   mete-beten prissätts per styck via BAIT_UNIT_PRICE ovan, inte här. */
 const BAIT_PRICES = { mask: 0, maggot: 40, majs: 60, jigg: 0, spinnare: 120, wobbler: 200, vertikaljigg: 0, pirk: 160, trollingwobbler: 0 };
 /* BETE — artbias per bete. Alla värden hålls inom [0.90, 1.10] så inget kapas av
    taket; varje bete ger en tydlig men liten styrning mot sin målart. */
@@ -547,6 +556,7 @@ const gameState = {
   selRod: 'start',
   selSkin: 'standard',
   selBait: 'mask',
+  baitBuyQty: BAIT_BUY_MIN,   /* vald köpmängd för förbrukningsbart bete i shoppen */
   view: 'studio',
   log: {},
 };
@@ -1340,7 +1350,26 @@ function handleShopAction(action) {
     }
   } else if (gameState.shopCategory === 'baits') {
     const bait = BAITS[gameState.selBait];
-    if (action === 'buy') {
+    if (action === 'qminus') {
+      gameState.baitBuyQty = Math.max(BAIT_BUY_MIN, gameState.baitBuyQty - BAIT_BUY_STEP);
+    } else if (action === 'qplus') {
+      gameState.baitBuyQty += BAIT_BUY_STEP;
+    } else if (action === 'buyqty') {
+      /* Köp förbrukningsbart bete i antal — läggs till i väskans befintliga antal. */
+      if (!ownsRodForMethod(bait.method)) return;      /* kräver spö för metoden */
+      const qty = gameState.baitBuyQty;
+      const total = qty * BAIT_UNIT_PRICE;
+      if (gameState.kronor >= total) {
+        gameState.kronor -= total;
+        gameState.baitCounts[bait.id] = getBaitCount(bait.id) + qty;
+        gameState.ownedBaits.add(bait.id);            /* markera som upptäckt */
+        renderInventory();
+        showToast(bait.name + ' ×' + qty + ' köpt!');
+      } else {
+        showToast('För lite FG — köp blockerat');
+      }
+    } else if (action === 'buy') {
+      /* Engångsköp för eviga beten (ej förbrukningsbara). */
       if (!ownsRodForMethod(bait.method)) return;      /* kräver spö för metoden */
       const price = BAIT_PRICES[bait.id];
       if (gameState.kronor >= price) {
@@ -1348,12 +1377,14 @@ function handleShopAction(action) {
         gameState.ownedBaits.add(bait.id);
         gameState.bait[bait.method] = bait.id;         /* utrusta direkt */
         showToast(bait.name + ' köpt!');
+      } else {
+        showToast('För lite FG — köp blockerat');
       }
     } else {
       gameState.bait[bait.method] = bait.id;
       showToast(bait.name + ' valt');
     }
-    if (gameState.method === bait.method) renderOddsBar();
+    if (gameState.method === bait.method) { renderSetupChips(); renderOddsBar(); }
   } else if (gameState.shopCategory === 'boat') {
     if (action === 'buy' && !gameState.ownedBoat) {
       if (!isBoatUnlocked()) return;                    /* låst av level */
@@ -2204,8 +2235,10 @@ function buildLockedCtaHtml(level) {
   return `<div class="scta"><span class="sprice">Låst</span><button class="sbuy cant" disabled>Låses upp på level ${level}</button></div>`;
 }
 
-/* CTA för bete (kronor). Utrusta-knappen heter "Välj". */
+/* CTA för bete (kronor). Förbrukningsbart mete-bete köps i antal (mängdväljare);
+   eviga beten köps en gång. Utrusta-knappen heter "Välj". */
 function buildBaitCtaHtml(bait, owned, equipped) {
+  if (bait.consumable) return buildConsumableBaitCtaHtml(bait, equipped);
   const price = BAIT_PRICES[bait.id];
   const priceHtml = price === 0
     ? '<span class="sprice free">Gratis</span>'
@@ -2217,6 +2250,33 @@ function buildBaitCtaHtml(bait, owned, equipped) {
     ? '<button class="sbuy primary" id="sb" data-a="buy">Köp</button>'
     : '<button class="sbuy cant" disabled>För lite FG</button>';
   return `<div class="scta">${priceHtml}${btn}</div>`;
+}
+
+/* CTA för förbrukningsbart mete-bete: mängdväljare (− antal +), totalpris och köp.
+   Antalet ändras i steg om BAIT_BUY_STEP, golv vid BAIT_BUY_MIN. */
+function buildConsumableBaitCtaHtml(bait, equipped) {
+  const qty = gameState.baitBuyQty;
+  const total = qty * BAIT_UNIT_PRICE;
+  const canAfford = gameState.kronor >= total;
+  const atMin = qty <= BAIT_BUY_MIN;
+  const buyBtn = canAfford
+    ? `<button class="sbuy primary" data-a="buyqty">Köp ${qty} st</button>`
+    : '<button class="sbuy cant" disabled>För lite FG</button>';
+  /* Sekundär rad: välj som aktivt bete (om man har antal och det inte redan är valt). */
+  let equipRow = '';
+  if (equipped) equipRow = '<div class="scta"><span class="sprice free">Aktivt bete</span><button class="sbuy equipped" disabled>✓ Vald</button></div>';
+  else if (getBaitCount(bait.id) > 0) equipRow = '<div class="scta"><span class="sprice"></span><button class="sbuy equip" data-a="equip">Välj som bete</button></div>';
+  return `
+    <div class="qstep">
+      <button class="qbtn" data-a="qminus" ${atMin ? 'disabled' : ''}>−</button>
+      <span class="qn">${qty}</span>
+      <button class="qbtn" data-a="qplus">+</button>
+    </div>
+    <div class="scta">
+      <span class="sprice kr">${total.toLocaleString('sv-SE')} FG</span>
+      ${buyBtn}
+    </div>
+    ${equipRow}`;
 }
 
 function renderShopInfo() {
@@ -2275,9 +2335,10 @@ function renderShopInfo() {
 }
 
 function bindShopActionButton() {
-  const btn = getEl('sb');
-  if (!btn) return;
-  btn.onclick = () => handleShopAction(btn.dataset.a);
+  /* Binder alla shop-knappar i info-rutan (köp/utrusta samt mängdväljarens +/−/köp). */
+  getEl('sinfo').querySelectorAll('[data-a]:not([disabled])').forEach(btn => {
+    btn.onclick = () => handleShopAction(btn.dataset.a);
+  });
 }
 
 function renderShelf() {
@@ -2295,10 +2356,13 @@ function renderShelf() {
     priceLabel = it => it.price === 0 ? 'Gratis' : it.price.toLocaleString('sv-SE') + ' FG';
   } else if (cat === 'baits') {
     list = BAIT_ORDER.map(id => BAITS[id]); selected = gameState.selBait;
-    isOwned = it => gameState.ownedBaits.has(it.id);
+    /* Förbrukningsbart bete räknas som ägt så fort man har antal > 0. */
+    isOwned = it => it.consumable ? getBaitCount(it.id) > 0 : gameState.ownedBaits.has(it.id);
     isLocked = it => !ownsRodForMethod(it.method);
     lockLabel = () => 'Kräver spö';
-    priceLabel = it => BAIT_PRICES[it.id] === 0 ? 'Gratis' : BAIT_PRICES[it.id].toLocaleString('sv-SE') + ' FG';
+    priceLabel = it => it.consumable
+      ? BAIT_UNIT_PRICE + ' FG/st'
+      : (BAIT_PRICES[it.id] === 0 ? 'Gratis' : BAIT_PRICES[it.id].toLocaleString('sv-SE') + ' FG');
   } else if (cat === 'boat') {
     list = [BOAT]; selected = BOAT.id;
     isOwned = () => gameState.ownedBoat;
@@ -2322,7 +2386,7 @@ function renderShelf() {
     div.innerHTML = `<div class="sthumb"></div><div class="nm2">${item.name}</div><div class="pr2">${locked ? lockLabel(item) : priceLabel(item)}</div><div class="ow">✓</div>`;
     div.onclick = () => {
       if (cat === 'rods') gameState.selRod = item.id;
-      else if (cat === 'baits') gameState.selBait = item.id;
+      else if (cat === 'baits') { gameState.selBait = item.id; gameState.baitBuyQty = BAIT_BUY_MIN; }
       else if (cat === 'skins') gameState.selSkin = item.id;
       renderShopHero();
       renderShopInfo();
@@ -2580,7 +2644,7 @@ initGame();
       ownedBaits: new Set(['mask']),
       baitCounts: { ...BAIT_START_COUNTS },
       bait: { mete: 'mask', spinn: null, vert: null, troll: null },
-      shopCategory: 'rods', selRod: 'start', selSkin: 'standard', selBait: 'mask',
+      shopCategory: 'rods', selRod: 'start', selSkin: 'standard', selBait: 'mask', baitBuyQty: BAIT_BUY_MIN,
       view: 'studio',
     });
     SPECIES_ORDER.forEach(id => {
