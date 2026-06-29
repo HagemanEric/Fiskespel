@@ -347,6 +347,16 @@ const FIGHT_REEL_TENSION_RATE = 0.22;   /* spänning per sek vid vev (× difficu
 const FIGHT_TENSION_DECAY     = 0.55;   /* spänning som släpper per sek när man ger lina */
 const FIGHT_REEL_THRESHOLD    = 0.04;   /* dödzon — vevinput under detta räknas som passiv */
 
+/* Blind-vev-straff: oavbruten vev bygger en EXTRA spänning som växer med hur länge
+   man hållit inne — så man tvingas veva i stötar och ge efter ibland i stället för
+   att hålla inne. Straffen skalas med fiskens VIKT (inte den art-relativa svårig-
+   heten), eftersom en 1,5 kg gädda annars fightas som en liten mört. Under WEIGHT_LOW
+   är straffen noll → mört/småabborre förblir triviala och golvet (MIN) är orört. */
+const FIGHT_REEL_HOLD_WEIGHT_LOW  = 0.6; /* kg — under detta: ingen blind-vev-straff (småfisk trivial) */
+const FIGHT_REEL_HOLD_WEIGHT_FULL = 2.5; /* kg — vid/över detta: full blind-vev-straff */
+const FIGHT_REEL_HOLD_RATE  = 0.17;      /* extra spänning per sek av oavbruten vev (× viktfaktor × hålltid) */
+const FIGHT_REEL_HOLD_RESET = 6.0;       /* hur snabbt blind-vev-mätaren nollas när man släpper (per sek) — kort släpp räcker */
+
 /* Rusningar (fisken drar; spänningen rusar upp → släpp veven tills den lugnar sig). */
 const FIGHT_RUN_FIRST_DELAY    = 2.2;   /* sek innan första rusningen */
 const FIGHT_RUN_INTERVAL       = 3.6;   /* sek mellan rusningar (höjt → mer vevtid, lugnare tempo) */
@@ -798,6 +808,7 @@ function startFight() {
     runTimer: FIGHT_RUN_FIRST_DELAY,   /* tid kvar till nästa rusning */
     runRemaining: 0,                   /* tid kvar av pågående rusning */
     slack: 0,                          /* passivitetsmätare (lugn fas utan vev) */
+    reelHold: 0,                       /* sek oavbruten vev — driver blind-vev-straffen */
     pulseTimer: 0,
     last: performance.now(),
   };
@@ -850,6 +861,10 @@ function tickFight(now) {
     }
   }
 
+  /* Blind-vev-mätare: växer vid oavbruten vev, nollas snabbt när man släpper. */
+  if (reeling) fs.reelHold += dt;
+  else fs.reelHold = Math.max(0, fs.reelHold - FIGHT_REEL_HOLD_RESET * dt);
+
   /* Spänning, avstånd och passivitet. */
   if (fs.running) {
     /* Rusning: spänningen rusar upp. Vevar man mitt i straffas det hårt. */
@@ -857,8 +872,14 @@ function tickFight(now) {
     fs.distance += FIGHT_RUN_DISTANCE_RATE * fs.difficulty * dt;
     fs.slack = 0;   /* under rusning SKA man vara passiv — ingen straffräkning */
   } else if (reeling) {
-    /* Vev: avståndet minskar men spänningen stiger. */
-    fs.tension += FIGHT_REEL_TENSION_RATE * fs.difficulty * (0.5 + input) * dt;
+    /* Vev: avståndet minskar men spänningen stiger. Att hålla inne kontinuerligt
+       bygger en extra, växande spänning (skalad med fiskens vikt × hålltid) — pumpa
+       i stötar och ge efter ibland för att hålla nere den. Småfisk under WEIGHT_LOW
+       får viktfaktor 0 och påverkas inte alls. */
+    const holdWeight = Math.max(0, Math.min(1,
+      (hookedFish.weight - FIGHT_REEL_HOLD_WEIGHT_LOW) / (FIGHT_REEL_HOLD_WEIGHT_FULL - FIGHT_REEL_HOLD_WEIGHT_LOW)));
+    fs.tension += (FIGHT_REEL_TENSION_RATE * fs.difficulty * (0.5 + input)
+                + FIGHT_REEL_HOLD_RATE * holdWeight * fs.reelHold * input) * dt;
     fs.distance -= FIGHT_REEL_DISTANCE_RATE * input * dt;
     fs.slack = 0;
   } else {
