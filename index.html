@@ -237,6 +237,14 @@ const ODDS_SATURATION = 85;       /* K — högre = glesare napp vid samma uppl�
 const PREDATOR_LEVEL_BONUS = 0.4; /* GOLV — rovfisk får extra vikt per level */
 const GEAR_CAP = 25;              /* Max rod-bonus i procent */
 
+/* STORLEKSGOLV per level: med stigande level tonas artens 'liten'-klass ut och
+   andelen flyttas upp till 'bra' och 'stor'. Adderas OVANPÅ uppläggskvaliteten
+   (level höjer golvet → mindre småfisk; upplägget når taket → troféer).
+   Determinismen i storleksdragningen är oförändrad — bara vikterna justeras. */
+const SIZE_LEVEL_MAX        = 30;   /* maxlevel-referens: full effekt nås här (level 1 = ingen effekt) */
+const SIZE_LEVEL_LITEN_FADE = 0.75; /* andel av 'liten' som flyttas upp vid maxlevel (lvl30: 0.70→~0.18) */
+const SIZE_LEVEL_TO_BRA     = 0.70; /* hur stor del av det bortflyttade som går till 'bra' (resten till 'stor') */
+
 /* ############################################################################
    PLATSHÅLLARE — SPÖ & BETE (kalibreras senare, ändra fritt här)
    ############################################################################ */
@@ -748,7 +756,15 @@ function pickSpeciesAndSize() {
   let braWeight = (0.20 + 0.15 * quality) * sizeReach;
   if (sizeReach < 0.5) storWeight = 0;
   if (sizeReach < 0.15) braWeight = 0;
-  const litenWeight = Math.max(0, 1 - storWeight - braWeight);
+  let litenWeight = Math.max(0, 1 - storWeight - braWeight);
+  /* Level-baserat golvlyft: tonar ut 'liten' med stigande level (0 vid level 1,
+     full effekt vid SIZE_LEVEL_MAX). Det bortflyttade fördelas upp till 'bra'
+     och 'stor'. Adderas ovanpå uppläggskvaliteten; 'liten' når aldrig noll. */
+  const levelProgress = Math.max(0, Math.min(1, (gameState.level - 1) / (SIZE_LEVEL_MAX - 1)));
+  const moved = litenWeight * SIZE_LEVEL_LITEN_FADE * levelProgress;
+  litenWeight -= moved;
+  braWeight  += moved * SIZE_LEVEL_TO_BRA;
+  storWeight += moved * (1 - SIZE_LEVEL_TO_BRA);
   const sizeRoll = Math.random();
   const sizeClass = sizeRoll < storWeight ? 'stor' : sizeRoll < storWeight + braWeight ? 'bra' : 'liten';
   let [lo, hi] = sp.weightClasses[sizeClass];
