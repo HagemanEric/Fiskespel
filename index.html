@@ -19,8 +19,11 @@
   .xpbar{height:6px;background:#0b1f27;border:1px solid var(--line);border-radius:20px;overflow:hidden;min-width:60px}
   .xpf{height:100%;width:0;background:linear-gradient(90deg,var(--cyan),var(--copper));transition:width .5s}
   .xpt{font-family:'IBM Plex Mono';font-size:9px;color:var(--muted);margin-top:3px}
-  .cur{text-align:right;font-family:'IBM Plex Mono';font-weight:600}
-  .cur .kr{font-size:14px;color:var(--copper-bright)} .cur .pe{font-size:11px;color:var(--gold)}
+  .cur{text-align:right;font-family:'IBM Plex Mono';font-weight:600;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+  /* FG-räknare: tydlig kopparpill med myntmarkör, alltid synlig i toppfältet. */
+  .cur .money{display:inline-flex;align-items:center;gap:6px;background:rgba(184,115,51,.18);border:1px solid var(--copper);border-radius:20px;padding:3px 11px}
+  .cur .coin{color:var(--copper-bright);font-size:11px;line-height:1}
+  .cur .kr{font-size:15px;color:var(--copper-bright)} .cur .pe{font-size:11px;color:var(--gold)}
   .tabbar{display:flex;gap:6px;padding:0 14px 8px;z-index:8}
   .tab{flex:1;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:10px;padding:9px;font-weight:600;font-size:13px;cursor:pointer;transition:.15s}
   .tab[aria-selected="true"]{background:var(--panel);color:var(--ink);border-color:var(--cyan)}
@@ -127,6 +130,8 @@
   .rw .rl{display:flex;justify-content:space-between;padding:2px 0}.rw .rl .b{color:var(--gold);font-weight:600}
   .mbtns{display:flex;gap:9px}
   .mb{flex:1;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:11px;padding:12px;font-weight:600;font-size:14px;cursor:pointer}.mb.primary{background:var(--copper);color:#26190a;border-color:var(--copper)}
+  /* Level-up-ruta: återanvänder modal/card-stilen, kopparfärgad rubrik. */
+  #lvlup .card h2{color:var(--copper-bright)} #lvlup #luBody{text-align:center}#lvlup #luBody .rl{justify-content:center}#lvlup #luBody .head{color:var(--muted);font-size:11px;margin-bottom:3px}
   .toast{position:absolute;top:96px;left:50%;transform:translateX(-50%) translateY(-12px);opacity:0;z-index:30;background:rgba(18,48,58,.96);border:1px solid var(--cyan);border-radius:30px;padding:9px 16px;font-size:13px;font-weight:600;transition:.3s;pointer-events:none;white-space:nowrap;max-width:92%;text-align:center;text-shadow:0 1px 2px #000}
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .fhint{position:absolute;left:0;right:0;bottom:128px;z-index:6;text-align:center;font-size:12px;color:var(--ink);text-shadow:0 1px 4px #000;pointer-events:none}
@@ -144,8 +149,8 @@
 <div class="app" id="app">
   <div class="topbar">
     <div class="lvl"><div class="lvlb" id="lvlb">1</div></div>
-    <div><div class="xpbar"><div class="xpf" id="xpf"></div></div><div class="xpt" id="xpt">0 / 20 XP</div></div>
-    <div class="cur"><div class="kr" id="kr">0 FG</div><div class="pe" id="pe">◈ 0</div></div>
+    <div><div class="xpbar"><div class="xpf" id="xpf"></div></div><div class="xpt" id="xpt">0 / 100 XP</div></div>
+    <div class="cur"><div class="money" title="Fiskeguld"><span class="coin">●</span><span class="kr" id="kr">0 FG</span></div><div class="pe" id="pe">◈ 0</div></div>
   </div>
   <div class="tabbar" role="tablist">
     <button class="tab" role="tab" aria-selected="true" data-s="fiska">Fiska</button>
@@ -190,6 +195,12 @@
     </section>
   </div>
   <div class="modal" id="modal"><div class="card" id="mcard"></div></div>
+  <div class="modal" id="lvlup"><div class="card">
+    <p class="sub">Du gick upp i nivå</p>
+    <h2 id="luTitle">Grattis – ny nivå!</h2>
+    <div class="rw" id="luBody"></div>
+    <div class="mbtns"><button class="mb primary" id="luBtn">Fortsätt</button></div>
+  </div></div>
   <div class="toast" id="toast"></div>
 </div>
 
@@ -297,6 +308,14 @@ const FG_FISH_SIZE_BONUS = 3.0;   /* trofé ger base × (1 + detta); liten ger �
 /** Beräknar XP som krävs för att nå nästa level. Mål: lvl 1→5 ~25 min aktivt fiske. */
 function xpRequiredForLevel(level) {
   return Math.round(XP_LEVEL_BASE * Math.pow(XP_LEVEL_GROWTH, level - 1));
+}
+
+/** Total ackumulerad XP som krävts för att NÅ en viss level (summa av alla tidigare trösklar).
+    Endast för visning — påverkar inte level-beräkningen. */
+function cumulativeXpForLevel(level) {
+  let sum = 0;
+  for (let i = 1; i < level; i++) sum += xpRequiredForLevel(i);
+  return sum;
 }
 
 /* ############################################################################
@@ -1262,25 +1281,49 @@ function handleShopAction(action) {
    XP, levelup och meddelanden om upplåsta arter, platser och metoder.
    ============================================================================= */
 
+/* Uppmuntrande/fiskenyttiga rader när en nivå inte låser upp något konkret. */
+const LEVELUP_TIPS = [
+  'Sikta på ett nytt personligt rekord!',
+  'Tips: längre kast förskjuter fångsten mot större fisk.',
+  'Tips: att släppa fisken ger mer XP än att behålla den.',
+  'Tips: rätt bete nudgar fångsten mot din målart.',
+  'Tips: stor fisk för arten ger mer XP och mer FG.',
+  'Fortsätt fiska — nästa spö närmar sig!',
+];
+
 function grantXp(amount) {
   gameState.xp += amount;
+  let reachedLevel = null;
+  const unlocks = [];   /* samlas över alla nivåer som passeras (t.ex. debug +5) */
   while (gameState.xp >= xpRequiredForLevel(gameState.level)) {
     gameState.xp -= xpRequiredForLevel(gameState.level);
     gameState.level++;
-    const speciesUnlocks = SPECIES_ORDER
-      .filter(id => SPECIES[id].unlockLevel === gameState.level)
-      .map(id => SPECIES[id].name);
-    const extraUnlocks = [];
-    /* Spön som blir köpbara i shoppen på denna level. */
-    RODS.filter(r => r.unlockLevel === gameState.level).forEach(r => extraUnlocks.push(r.name + ' (shop)'));
-    if (SPOTS.rev.unlockLevel === gameState.level) extraUnlocks.push('Stenrev');
-    if (SPOTS.djup.unlockLevel === gameState.level) extraUnlocks.push('Djupkant');
-    if (gameState.level === 15) extraUnlocks.push('Båt (köp i shop)');
-    const allUnlocks = [...speciesUnlocks, ...extraUnlocks];
-    setTimeout(() => showToast(
-      'Nivå ' + gameState.level + '!' + (allUnlocks.length ? ' Upplåst: ' + allUnlocks.join(', ') : '')
-    ), 150);
+    reachedLevel = gameState.level;
+    /* Upplåsningsinfo hämtas från de level-gates som redan finns i konfigurationen. */
+    SPECIES_ORDER.filter(id => SPECIES[id].unlockLevel === gameState.level)
+      .forEach(id => unlocks.push('Ny art: ' + SPECIES[id].name));
+    RODS.filter(r => r.unlockLevel === gameState.level)
+      .forEach(r => unlocks.push('Nytt spö: ' + r.name + ' (shop)'));
+    if (SPOTS.rev.unlockLevel === gameState.level) unlocks.push('Ny plats: Stenrev');
+    if (SPOTS.djup.unlockLevel === gameState.level) unlocks.push('Ny plats: Djupkant');
+    if (gameState.level === BOAT_UNLOCK_LEVEL) unlocks.push('Båt (köp i shop)');
   }
+  /* Visa "Grattis"-rutan för den nivå spelaren nådde, med upplåsningar eller ett tips. */
+  if (reachedLevel !== null) setTimeout(() => showLevelUp(reachedLevel, unlocks), 150);
+}
+
+/** Visar level-up-rutan: vad som låses upp på nivån, annars en uppmuntrande rad. */
+function showLevelUp(level, unlocks) {
+  getEl('luTitle').textContent = 'Grattis – nivå ' + level + '!';
+  const body = getEl('luBody');
+  if (unlocks.length) {
+    body.innerHTML = '<div class="head">Upplåst på denna nivå</div>'
+      + unlocks.map(u => `<div class="rl"><span class="b">${u}</span></div>`).join('');
+  } else {
+    body.innerHTML = `<div class="rl"><span>${LEVELUP_TIPS[level % LEVELUP_TIPS.length]}</span></div>`;
+  }
+  getEl('luBtn').onclick = () => getEl('lvlup').classList.remove('on');
+  getEl('lvlup').classList.add('on');
 }
 
 /* =============================================================================
@@ -1322,9 +1365,14 @@ function updateStatusBar() {
   getEl('lvlb').textContent = gameState.level;
   getEl('kr').textContent = Math.round(gameState.kronor).toLocaleString('sv-SE') + ' FG';
   getEl('pe').textContent = '◈ ' + gameState.pearls;
+  /* Mätaren fylls per nivå (inom-nivå-progress) — level-logiken är oförändrad.
+     Texten visar ACKUMULERAD total-XP mot nästa nivås kumulativa tröskel. */
   const needed = xpRequiredForLevel(gameState.level);
+  const levelBase = cumulativeXpForLevel(gameState.level);      /* total-XP vid nivåns början */
+  const totalXp = Math.round(levelBase + gameState.xp);         /* ackumulerad total-XP */
+  const nextThreshold = Math.round(levelBase + needed);         /* kumulativ tröskel för nästa nivå */
   getEl('xpf').style.width = Math.min(100, gameState.xp / needed * 100) + '%';
-  getEl('xpt').textContent = gameState.xp + ' / ' + needed + ' XP';
+  getEl('xpt').textContent = totalXp + ' / ' + nextThreshold + ' XP';
 }
 
 function makeChipHtml(label, active, unlocked) {
