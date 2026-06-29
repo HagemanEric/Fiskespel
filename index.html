@@ -120,6 +120,24 @@
   .lrec .l2{color:var(--muted);font-size:8px;letter-spacing:.05em;text-transform:uppercase}.lrec .v2{font-size:13px;font-weight:600;margin-top:2px}
   .lrec .pb .v2{color:var(--copper-bright)}.lrec .spel .v2{color:var(--cyan)}.lrec .verk .v2{color:var(--gold)}
 
+  /* Fiskeväska (inventory) */
+  .invwrap{padding:4px 0 18px}
+  .invtitle{font-family:'Fraunces';font-weight:700;font-size:20px;margin:6px 2px 12px}
+  .invh{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:16px 2px 7px}
+  .invsec{background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+  .invrow{display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border-bottom:1px solid var(--line)}
+  .invsec .invrow:last-child{border-bottom:none}
+  .invrow.empty{opacity:.5}
+  .invname{font-size:14px}.invname .invsub{color:var(--muted);font-size:11px;margin-left:5px}
+  .invtag{font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:#0b1f27;background:var(--reed);padding:2px 6px;border-radius:6px;margin-left:6px}
+  .invcount{font-family:'IBM Plex Mono';font-weight:600;font-size:15px;color:var(--copper-bright)}
+  .invrow.empty .invcount{color:var(--muted)}
+
+  /* "Slut på bete"-ruta */
+  .card .lvlh{font-family:'Fraunces';font-weight:800;font-size:22px;margin:4px 0 2px;color:var(--copper-bright)}
+  .obalts{display:flex;flex-direction:column;gap:7px;margin:10px 0 12px}
+  .obalt{border:1px solid var(--reed);border-radius:10px;padding:10px;background:var(--panel);color:var(--ink);font-size:13px;cursor:pointer}
+
   .modal{position:absolute;inset:0;z-index:20;display:none;place-items:center;padding:22px;background:rgba(4,12,16,.78)}
   .modal.on{display:grid}
   .card{background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:18px;padding:22px;width:100%;max-width:340px;text-align:center;box-shadow:0 30px 60px -20px #000}
@@ -155,6 +173,7 @@
   <div class="tabbar" role="tablist">
     <button class="tab" role="tab" aria-selected="true" data-s="fiska">Fiska</button>
     <button class="tab" role="tab" aria-selected="false" data-s="shop">Shop</button>
+    <button class="tab" role="tab" aria-selected="false" data-s="vaska">Väska</button>
     <button class="tab" role="tab" aria-selected="false" data-s="logg">Logg</button>
   </div>
   <div class="screens">
@@ -188,6 +207,12 @@
           <div class="vtog" id="vtog"><button data-v="studio" aria-pressed="true">Studio</button><button data-v="water" aria-pressed="false">Vid vattnet</button></div></div>
         <div class="sinfo" id="sinfo"></div>
         <div class="shelf" id="shelf"></div>
+      </div>
+    </section>
+    <section class="screen scroll" id="s-vaska">
+      <div class="invwrap">
+        <h3 class="invtitle">Fiskeväska</h3>
+        <div id="invlist"></div>
       </div>
     </section>
     <section class="screen scroll" id="s-logg"><div id="loglist"></div>
@@ -259,6 +284,11 @@ const ROD_CAST_MAX      = { start: 0.55, bettre_met: 0.70, spinn: 0.85, vertikal
 
 /* BETE — mjukt tak för hur mycket bete får påverka artfördelningen (aldrig avgörande). */
 const BAIT_BIAS_CAP = 0.10;        /* ±10 % max förskjutning av artvikt */
+
+/* FISKEVÄSKA / FÖRBRUKNINGSBART BETE (steg 1) — platshållare.
+   Endast mete-bete (consumable: true i BAITS) förbrukas; övriga beten ägs för alltid. */
+const BAIT_START_COUNTS      = { mask: 20 };  /* startkit: antal per förbrukningsbart bete (mask ×20) */
+const BAIT_CONSUME_PER_CATCH = 1;             /* antal bete som dras per LANDAD mete-fångst */
 /* BETE — pris i kronor (metodens startbete är gratis). */
 const BAIT_PRICES = { mask: 0, maggot: 40, majs: 60, jigg: 0, spinnare: 120, wobbler: 200, vertikaljigg: 0, pirk: 160, trollingwobbler: 0 };
 /* BETE — artbias per bete. Alla värden hålls inom [0.90, 1.10] så inget kapas av
@@ -471,11 +501,13 @@ const RODS = [
 ];
 
 /* BETE per metod. methodDefault = metodens gratisbete (fås när spöt köps).
+   consumable: true = förbrukas vid landad mete-fångst och köps i antal (steg 2).
+   Lägg till fler förbrukningsbara beten genom att sätta consumable: true här.
    Multiplikatorvärden ligger i BAIT_SPECIES_BIAS (KONFIGURATION). */
 const BAITS = {
-  mask:            { id: 'mask',            name: 'Mask',            method: 'mete',  methodDefault: true },
-  maggot:          { id: 'maggot',          name: 'Maggot',          method: 'mete' },
-  majs:            { id: 'majs',            name: 'Majs',            method: 'mete' },
+  mask:            { id: 'mask',            name: 'Mask',            method: 'mete',  methodDefault: true, consumable: true },
+  maggot:          { id: 'maggot',          name: 'Maggot',          method: 'mete',  consumable: true },
+  majs:            { id: 'majs',            name: 'Majs',            method: 'mete',  consumable: true },
   jigg:            { id: 'jigg',            name: 'Jigg',            method: 'spinn', methodDefault: true },
   spinnare:        { id: 'spinnare',        name: 'Spinnare',        method: 'spinn' },
   wobbler:         { id: 'wobbler',         name: 'Wobbler',         method: 'spinn' },
@@ -508,6 +540,8 @@ const gameState = {
   ownedSkins: new Set(['standard']),
   /* Startkit: startspö + mask. Övriga beten saknas tills de köps. */
   ownedBaits: new Set(['mask']),
+  /* Antal kvar per förbrukningsbart bete (fiskeväskan). Startkit: 20 mask. */
+  baitCounts: { ...BAIT_START_COUNTS },
   bait: { mete: 'mask', spinn: null, vert: null, troll: null },
   shopCategory: 'rods',
   selRod: 'start',
@@ -634,6 +668,26 @@ function getCastSpotMultiplier(speciesId) {
 
 /* Aktivt bete för nuvarande metod (null om inget valt/ägt). */
 function getActiveBaitId() { return gameState.bait[gameState.method] || null; }
+
+/* --- Fiskeväska: antal och tillgänglighet (steg 1) --- */
+/* Antal kvar av ett förbrukningsbart bete (0 om saknas). */
+function getBaitCount(baitId) { return gameState.baitCounts[baitId] || 0; }
+/* Tillgängligt att välja/använda? Förbrukningsbart kräver antal > 0; evigt kräver ägt. */
+function isBaitAvailable(baitId) {
+  return BAITS[baitId].consumable ? getBaitCount(baitId) > 0 : gameState.ownedBaits.has(baitId);
+}
+/* Har spelaren ett användbart aktivt mete-bete (antal > 0)? */
+function hasUsableMeteBait() {
+  const id = gameState.bait.mete;
+  return id != null && isBaitAvailable(id);
+}
+/* Drar bete vid LANDAD mete-fångst (bara mete, bara förbrukningsbart bete). */
+function consumeActiveMeteBait() {
+  const id = gameState.bait.mete;
+  if (id && BAITS[id].consumable) {
+    gameState.baitCounts[id] = Math.max(0, getBaitCount(id) - BAIT_CONSUME_PER_CATCH);
+  }
+}
 /* Mjuk artbias från betet, klampad mot BAIT_BIAS_CAP så det aldrig blir avgörande. */
 function getBaitMultiplier(speciesId) {
   const baitId = getActiveBaitId();
@@ -1212,6 +1266,8 @@ function computeFishPrice(fish) {
 
 function processLandingRewards() {
   const fish = hookedFish;
+  /* Förbrukning: mete drar 1 av aktivt bete vid landad fångst (spinn/vert/troll drar inget). */
+  if (gameState.method === 'mete') consumeActiveMeteBait();
   const logEntry = gameState.log[fish.speciesId];
   const sp = fish.species;
   const sellValue = computeFishPrice(fish);
@@ -1446,7 +1502,9 @@ function renderSetupChips() {
   /* Bete för aktuell metod — upplåst = ägt (köps i shoppen). */
   html = '';
   BAIT_ORDER.filter(id => BAITS[id].method === gameState.method).forEach(id => {
-    html += `<span data-g="bait" data-k="${id}">${makeChipHtml(BAITS[id].name, gameState.bait[gameState.method] === id, gameState.ownedBaits.has(id))}</span>`;
+    /* Förbrukningsbart bete visar antal (×N); tillgängligt = antal > 0 (annars ägt). */
+    const label = BAITS[id].consumable ? `${BAITS[id].name} ×${getBaitCount(id)}` : BAITS[id].name;
+    html += `<span data-g="bait" data-k="${id}">${makeChipHtml(label, gameState.bait[gameState.method] === id, isBaitAvailable(id))}</span>`;
   });
   getEl('baits').innerHTML = html || '<span style="font-size:12px;color:var(--muted)">Inget bete</span>';
   html = '';
@@ -1470,6 +1528,89 @@ function renderOddsBar() {
   const baitId = getActiveBaitId();
   const baitName = baitId ? ' · ' + BAITS[baitId].name : '';
   getEl('legtxt').textContent = SPOTS[gameState.spot].name + ' · ' + METHODS[gameState.method].name + baitName + ' · ' + TIMES[gameState.time].name;
+}
+
+/* "Slut på bete"-ruta: visas när aktivt mete-bete är 0. Erbjuder byte till annat
+   mete-bete man har antal av, samt en väg till shoppen. */
+function showOutOfBaitModal() {
+  const modal = getEl('modal');
+  const card = getEl('mcard');
+  const activeId = gameState.bait.mete;
+  const activeName = activeId ? BAITS[activeId].name : 'Bete';
+  /* Andra mete-beten spelaren har antal av (kan byta till direkt). */
+  const alternatives = BAIT_ORDER.filter(id =>
+    BAITS[id].method === 'mete' && id !== activeId && isBaitAvailable(id));
+  let altHtml = '';
+  if (alternatives.length) {
+    altHtml = '<div class="obalts">' + alternatives.map(id =>
+      `<button class="obalt" data-bait="${id}">Byt till ${BAITS[id].name} ×${getBaitCount(id)}</button>`).join('') + '</div>';
+  }
+  card.innerHTML = `
+    <p class="sub">Slut på bete</p>
+    <h2 class="lvlh">${activeName} ×0</h2>
+    <p style="font-size:13px;color:var(--muted);line-height:1.6;margin:6px 0 4px">
+      Du har inget ${activeName.toLowerCase()} kvar. Köp mer mete-bete i shoppen${alternatives.length ? ' eller byt till ett bete du har kvar' : ''}.
+    </p>
+    ${altHtml}
+    <div class="mbtns">
+      <button class="mb primary" id="obShop">Till shoppen</button>
+      <button class="mb" id="obClose">Stäng</button>
+    </div>`;
+  modal.classList.add('on');
+  getEl('obClose').onclick = () => modal.classList.remove('on');
+  getEl('obShop').onclick = () => { modal.classList.remove('on'); switchTab('shop'); };
+  card.querySelectorAll('.obalt').forEach(btn => {
+    btn.onclick = () => {
+      gameState.bait.mete = btn.dataset.bait;
+      modal.classList.remove('on');
+      renderSetupChips();
+      renderOddsBar();
+      renderInventory();
+    };
+  });
+}
+
+/* Fiskeväska: visar förbrukningsbara beten med antal, ägda eviga beten och ägda spön. */
+function renderInventory() {
+  const wrap = getEl('invlist');
+  if (!wrap) return;
+  let html = '';
+
+  /* Förbrukningsbara beten — visa alla (även 0) så spelaren ser vad som är slut. */
+  const consumables = BAIT_ORDER.filter(id => BAITS[id].consumable);
+  html += '<h4 class="invh">Mete-bete (förbrukas)</h4><div class="invsec">';
+  html += consumables.map(id => {
+    const n = getBaitCount(id);
+    const active = gameState.bait.mete === id;
+    return `<div class="invrow ${n === 0 ? 'empty' : ''}">
+      <span class="invname">${BAITS[id].name}${active ? ' <span class="invtag">aktivt</span>' : ''}</span>
+      <span class="invcount">×${n}</span></div>`;
+  }).join('');
+  html += '</div>';
+
+  /* Ägda eviga beten (ej förbrukningsbara). */
+  const eternal = BAIT_ORDER.filter(id => !BAITS[id].consumable && gameState.ownedBaits.has(id));
+  if (eternal.length) {
+    html += '<h4 class="invh">Konstgjort bete (ägs)</h4><div class="invsec">';
+    html += eternal.map(id => `<div class="invrow">
+      <span class="invname">${BAITS[id].name} <span class="invsub">${METHODS[BAITS[id].method].name}</span></span>
+      <span class="invcount">✓</span></div>`).join('');
+    html += '</div>';
+  }
+
+  /* Ägda spön. */
+  html += '<h4 class="invh">Spön (ägs)</h4><div class="invsec">';
+  html += RODS.filter(r => gameState.ownedRods.has(r.id)).map(r => `<div class="invrow">
+    <span class="invname">${r.name}${gameState.rod === r.id ? ' <span class="invtag">utrustat</span>' : ''}</span>
+    <span class="invcount">✓</span></div>`).join('');
+  html += '</div>';
+
+  /* Båt om ägd. */
+  if (gameState.ownedBoat) {
+    html += '<div class="invsec"><div class="invrow"><span class="invname">' + BOAT.name + '</span><span class="invcount">✓</span></div></div>';
+  }
+
+  wrap.innerHTML = html;
 }
 
 function showReelPad(visible) { getEl('reelpad').classList.toggle('on', visible); }
@@ -1530,6 +1671,7 @@ function showCatchResultModal(landed, reason) {
     renderSetupChips();
     renderOddsBar();
     renderCatchLog();
+    renderInventory();
     renderShelf();
     renderShopHero();
     if (msg) showToast(msg);
@@ -1559,6 +1701,7 @@ function switchTab(screenId) {
   getEl('s-' + screenId).classList.add('on');
   if (screenId === 'fiska') resizeCanvas();
   if (screenId === 'shop') { resizeShop3d(); renderShopHero(); }
+  if (screenId === 'vaska') renderInventory();
   if (screenId === 'logg') renderCatchLog();
 }
 
@@ -2242,7 +2385,11 @@ function bindSetupPanelButtons() {
 
 function bindCastButton() {
   getEl('castBtn').onclick = () => {
-    if (sceneState.mode === 'ready' && getCurrentMechanic() === 'passive') castMete();
+    if (sceneState.mode === 'ready' && getCurrentMechanic() === 'passive') {
+      /* Slut på aktivt mete-bete → blockera och hänvisa till shoppen/byte. */
+      if (!hasUsableMeteBait()) { showOutOfBaitModal(); return; }
+      castMete();
+    }
   };
 }
 
@@ -2365,6 +2512,7 @@ function initGame() {
   renderOddsBar();
   updateStatusBar();
   renderCatchLog();
+  renderInventory();
   resetToReady();
   renderShopHero();
   renderShopInfo();
@@ -2385,6 +2533,7 @@ initGame();
     renderSetupChips();
     renderOddsBar();
     renderCatchLog();
+    renderInventory();
     renderShelf();
     renderShopHero();
     renderShopInfo();
@@ -2407,6 +2556,8 @@ initGame();
     if (gameState.level < BOAT.unlockLevel) gameState.level = BOAT.unlockLevel;
     RODS.forEach(r => gameState.ownedRods.add(r.id));
     BAIT_ORDER.forEach(id => gameState.ownedBaits.add(id));
+    /* Fyll på förbrukningsbara beten så de går att testa. */
+    BAIT_ORDER.filter(id => BAITS[id].consumable).forEach(id => { gameState.baitCounts[id] = 20; });
     for (const methodId in gameState.bait) {
       if (!gameState.bait[methodId]) {
         const def = BAIT_ORDER.find(id => BAITS[id].method === methodId && BAITS[id].methodDefault);
@@ -2427,6 +2578,7 @@ initGame();
       ownedRods: new Set(['start']),
       ownedSkins: new Set(['standard']),
       ownedBaits: new Set(['mask']),
+      baitCounts: { ...BAIT_START_COUNTS },
       bait: { mete: 'mask', spinn: null, vert: null, troll: null },
       shopCategory: 'rods', selRod: 'start', selSkin: 'standard', selBait: 'mask',
       view: 'studio',
