@@ -381,10 +381,10 @@ function cumulativeXpForLevel(level) {
 /* Svårighet: difficulty = MIN + (MAX − MIN) × relativStorlek^EXPONENT.
    relativStorlek = var fiskens vikt ligger i artens spann (artens minsta → rekord). */
 const FIGHT_DIFFICULTY_MIN = 0.12;      /* GOLV — liten fisk för sin art förblir trivial (rör ej) */
-const FIGHT_DIFFICULTY_MAX = 2.2;       /* TAK — trofé för sin art når en rejäl fight (höjt från 1.5) */
-const FIGHT_SIZE_EXPONENT  = 1.45;      /* kurva — höjt så svårigheten stiger brantare mot stor fisk;
-                                           kombinerat med högre TAK blir medel-till-stor tydligt svårare
-                                           medan småfisk (relativStorlek ≈ 0) ligger kvar nära golvet */
+const FIGHT_DIFFICULTY_MAX = 2.4;       /* TAK — trofé för sin art når en rejäl fight (höjt en gnutta 2.2→2.4) */
+const FIGHT_SIZE_EXPONENT  = 1.38;      /* kurva — sänkt en aning 1.45→1.38 lyfter MELLANSKIKTET (medelstor
+                                           fisk blir lite svårare) utan att röra golvet: vid relativStorlek≈0
+                                           går svårigheten ändå mot MIN, så småfisk förblir trivial */
 
 /* Avstånd (1 = långt borta, 0 = i håven). */
 const FIGHT_START_DISTANCE     = 0.90;  /* startavstånd när fighten börjar */
@@ -415,9 +415,10 @@ const FIGHT_RUN_FIRST_DELAY    = 2.2;   /* sek innan första rusningen */
 const FIGHT_RUN_INTERVAL       = 3.6;   /* sek mellan rusningar (höjt → mer vevtid, lugnare tempo) */
 const FIGHT_RUN_DURATION_BASE  = 0.7;   /* grundlängd på en rusning (sek) */
 const FIGHT_RUN_DURATION_SCALE = 0.28;  /* extra rusningslängd × difficulty (sänkt så trofé-rusningar inte blir orimligt långa vid högt TAK) */
-const FIGHT_RUN_TENSION_RATE   = 0.15;  /* spänning per sek under rusning utan vev (× difficulty);
-                                           sänkt så att SLÄPPA under en rusning överlever även på trofé,
-                                           medan vev mitt i rusningen straffas hårt (se penalty nedan) */
+const FIGHT_RUN_TENSION_RATE   = 0.20;  /* spänning per sek under rusning utan vev (× difficulty);
+                                           höjt måttligt 0.15→0.20 så en rusning blir ett akut "släpp nu"-
+                                           ögonblick — inte tillbaka till 0.42, så trofé går ändå att klara
+                                           genom att gå in i rusningen med låg spänning och ge lina */
 const FIGHT_RUN_REEL_PENALTY   = 3.0;   /* extra spänning om man vevar mitt i en rusning (höjt → går inte att hålla inne veven blint på en stor fisk) */
 const FIGHT_RUN_DISTANCE_RATE  = 0.05;  /* avstånd fisken drar ut per sek under rusning (× difficulty);
                                            sänkt så avståndsbudgeten går ihop och stor fisk förblir vinnbar */
