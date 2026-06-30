@@ -124,18 +124,29 @@
   .lrec .l2{color:var(--muted);font-size:8px;letter-spacing:.05em;text-transform:uppercase}.lrec .v2{font-size:13px;font-weight:600;margin-top:2px}
   .lrec .pb .v2{color:var(--copper-bright)}.lrec .spel .v2{color:var(--cyan)}.lrec .verk .v2{color:var(--gold)}
 
-  /* Fiskeväska (inventory) */
+  /* Fiskeväska (inventory) — tryckbara föremål + detaljvy */
   .invwrap{padding:4px 0 18px}
   .invtitle{font-family:'Fraunces';font-weight:700;font-size:20px;margin:6px 2px 12px}
   .invh{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:16px 2px 7px}
-  .invsec{background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden}
-  .invrow{display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border-bottom:1px solid var(--line)}
-  .invsec .invrow:last-child{border-bottom:none}
-  .invrow.empty{opacity:.5}
-  .invname{font-size:14px}.invname .invsub{color:var(--muted);font-size:11px;margin-left:5px}
-  .invtag{font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:#0b1f27;background:var(--reed);padding:2px 6px;border-radius:6px;margin-left:6px}
-  .invcount{font-family:'IBM Plex Mono';font-weight:600;font-size:15px;color:var(--copper-bright)}
-  .invrow.empty .invcount{color:var(--muted)}
+  .invitems{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .invitem{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);cursor:pointer;transition:border-color .15s,background .15s}
+  .invitem.active{border-color:var(--reed)}
+  .invitem.sel{border-color:var(--cyan);background:#0d2630}
+  .invitem .iiname{font-size:14px;font-weight:600}
+  .invitem .iimeta{font-family:'IBM Plex Mono';font-size:11px;color:var(--copper-bright)}
+  .invitem.active .iimeta{color:var(--reed)}
+  .invdetail{margin-top:16px;background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:14px;padding:16px}
+  .invdetail:empty{display:none}
+  .invdetail .idname{font-family:'Fraunces';font-weight:700;font-size:19px}
+  .invdetail .ds{color:var(--muted);font-size:12px;margin:3px 0 2px;line-height:1.5}
+  .idstats{margin:11px 0 13px;display:flex;flex-direction:column;gap:6px}
+  .idrow{display:flex;justify-content:space-between;font-size:13px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .idrow:last-child{border-bottom:none;padding-bottom:0}
+  .idrow span:first-child{color:var(--muted)}
+  .idrow span:last-child{font-family:'IBM Plex Mono';font-weight:600}
+  .idequip{width:100%;border:none;border-radius:12px;padding:13px;font-weight:700;font-size:15px;cursor:pointer;background:linear-gradient(180deg,var(--copper-bright),var(--copper));color:#26190a}
+  .idequip.done2{background:transparent;border:1px solid var(--reed);color:var(--reed);cursor:default}
+  .idequip.cant2{background:#1c3e4a;color:var(--muted);cursor:default}
 
   /* "Slut på bete"-ruta */
   .card .lvlh{font-family:'Fraunces';font-weight:800;font-size:22px;margin:4px 0 2px;color:var(--copper-bright)}
@@ -564,6 +575,7 @@ const gameState = {
   selSkin: 'standard',
   selBait: 'mask',
   baitBuyQty: BAIT_BUY_MIN,   /* vald köpmängd för förbrukningsbart bete i shoppen */
+  bagSel: null,               /* valt föremål i fiskeväskan: { kind:'rod'|'bait'|'boat', id } */
   view: 'studio',
   log: {},
 };
@@ -1344,7 +1356,9 @@ function grantMethodDefaultBaits(rod) {
   });
 }
 
-/** Köper eller utrustar vald vara i shoppen (spön/bete med kronor, skins med pärlor). */
+/** Shoppen KÖPER bara (spön/bete med FG, skins med pärlor). Allt byte/utrustning
+    av gear (spö, mete-bete) sker i fiskeväskan — inte här. Skins är kosmetiska och
+    sätts fortfarande på i shoppen (ingår inte i gear-väskan). */
 function handleShopAction(action) {
   if (gameState.shopCategory === 'rods') {
     const rod = getRodById(gameState.selRod);
@@ -1353,16 +1367,12 @@ function handleShopAction(action) {
       if (gameState.kronor >= rod.price) {
         gameState.kronor -= rod.price;
         gameState.ownedRods.add(rod.id);
-        grantMethodDefaultBaits(rod);
+        grantMethodDefaultBaits(rod);                  /* metodens gratisbete (upplåsning, ej "utrusta") */
+        renderInventory();                             /* nytt spö dyker upp i väskan */
         showToast(rod.name + ' köpt!');
+      } else {
+        showToast('För lite FG — köp blockerat');
       }
-    } else {
-      gameState.rod = rod.id;
-      syncMethodToEquippedRod();
-      renderSetupChips();
-      renderOddsBar();
-      if (sceneState.mode === 'ready') resetToReady();
-      showToast(rod.name + ' utrustad');
     }
   } else if (gameState.shopCategory === 'baits') {
     const bait = BAITS[gameState.selBait];
@@ -1385,20 +1395,17 @@ function handleShopAction(action) {
         showToast('För lite FG — köp blockerat');
       }
     } else if (action === 'buy') {
-      /* Engångsköp för eviga beten (ej förbrukningsbara). */
+      /* Engångsköp för eviga beten (ej förbrukningsbara). Utrustas i väskan, inte här. */
       if (!ownsRodForMethod(bait.method)) return;      /* kräver spö för metoden */
       const price = BAIT_PRICES[bait.id];
       if (gameState.kronor >= price) {
         gameState.kronor -= price;
         gameState.ownedBaits.add(bait.id);
-        gameState.bait[bait.method] = bait.id;         /* utrusta direkt */
+        renderInventory();
         showToast(bait.name + ' köpt!');
       } else {
         showToast('För lite FG — köp blockerat');
       }
-    } else {
-      gameState.bait[bait.method] = bait.id;
-      showToast(bait.name + ' valt');
     }
     if (gameState.method === bait.method) { renderSetupChips(); renderOddsBar(); }
   } else if (gameState.shopCategory === 'boat') {
@@ -1409,10 +1416,12 @@ function handleShopAction(action) {
         gameState.ownedBoat = true;
         renderSetupChips();                             /* båt-metoder kan nu bli valbara */
         renderOddsBar();
+        renderInventory();
         showToast(BOAT.name + ' köpt!');
       }
     }
   } else {
+    /* Skins är kosmetiska — köp med pärlor och sätt på direkt (ej en del av gear-väskan). */
     const skin = SKINS.find(s => s.id === gameState.selSkin);
     if (action === 'buy') {
       if (gameState.pearls >= skin.price) {
@@ -1642,47 +1651,144 @@ function showOutOfBaitModal() {
   });
 }
 
-/* Fiskeväska: visar förbrukningsbara beten med antal, ägda eviga beten och ägda spön. */
+/* --- Fiskeväskan: tryckbara föremål, detaljvy och utrustning --- */
+
+/* Är ett betes-id aktivt för sin metod? */
+function isBaitActive(baitId) { return gameState.bait[BAITS[baitId].method] === baitId; }
+
+/* Säkerställer att bagSel pekar på ett föremål spelaren faktiskt äger; annars
+   faller den tillbaka på det utrustade spöt. */
+function normalizeBagSelection() {
+  const s = gameState.bagSel;
+  let valid = false;
+  if (s) {
+    if (s.kind === 'rod') valid = gameState.ownedRods.has(s.id);
+    else if (s.kind === 'bait') valid = !!BAITS[s.id] && gameState.ownedBaits.has(s.id);
+    else if (s.kind === 'boat') valid = gameState.ownedBoat;
+  }
+  if (!valid) gameState.bagSel = { kind: 'rod', id: gameState.rod };
+}
+
+/* Bygger en grupp med tryckbara föremål (returnerar '' om gruppen är tom). */
+function buildBagGroup(title, items) {
+  if (!items.length) return '';
+  const sel = gameState.bagSel;
+  const rows = items.map(it => {
+    const selected = sel && sel.kind === it.kind && sel.id === it.id;
+    return `<button class="invitem ${selected ? 'sel' : ''} ${it.active ? 'active' : ''}" data-kind="${it.kind}" data-id="${it.id}">
+      <span class="iiname">${it.name}</span>
+      <span class="iimeta">${it.meta}</span>
+    </button>`;
+  }).join('');
+  return `<h4 class="invh">${title}</h4><div class="invitems">${rows}</div>`;
+}
+
+/* Detaljkort för valt föremål: visar bara stats som finns i datan + utrusta-knapp. */
+function buildBagDetail() {
+  const s = gameState.bagSel;
+  if (!s) return '';
+  if (s.kind === 'rod') {
+    const rod = getRodById(s.id);
+    const equipped = gameState.rod === rod.id;
+    const methodNames = rod.methods.map(m => METHODS[m].name).join(', ');
+    let stats = `<div class="idrow"><span>Kastlängd</span><span>${Math.round(rod.castMax * 100)} %</span></div>`;
+    if (rod.sizeBonus > 0) stats += `<div class="idrow"><span>Storleksbonus</span><span>+${Math.round(rod.sizeBonus * 100)} % mot större fisk</span></div>`;
+    stats += `<div class="idrow"><span>Metod</span><span>${methodNames}</span></div>`;
+    if (rod.requiresBoat) stats += `<div class="idrow"><span>Kräver</span><span>Båt</span></div>`;
+    const btn = equipped
+      ? '<button class="idequip done2" disabled>✓ Utrustad</button>'
+      : `<button class="idequip" data-eq="rod" data-id="${rod.id}">Utrusta</button>`;
+    return `<div class="idname">${rod.name}</div><div class="ds">${rod.description}</div><div class="idstats">${stats}</div>${btn}`;
+  }
+  if (s.kind === 'bait') {
+    const bait = BAITS[s.id];
+    const active = isBaitActive(bait.id);
+    const isMete = bait.method === 'mete';
+    let stats = `<div class="idrow"><span>Metod</span><span>${METHODS[bait.method].name}</span></div>`;
+    if (bait.consumable) stats += `<div class="idrow"><span>Antal kvar</span><span>×${getBaitCount(bait.id)}</span></div>`;
+    else stats += `<div class="idrow"><span>Typ</span><span>Evigt bete</span></div>`;
+    let btn;
+    if (active) btn = '<button class="idequip done2" disabled>✓ Aktivt bete</button>';
+    else if (bait.consumable && getBaitCount(bait.id) === 0) btn = '<button class="idequip cant2" disabled>Slut — köp i shoppen</button>';
+    else btn = `<button class="idequip" data-eq="bait" data-id="${bait.id}">${isMete ? 'Använd som bete' : 'Använd för ' + METHODS[bait.method].name}</button>`;
+    return `<div class="idname">${bait.name}</div><div class="idstats">${stats}</div>${btn}`;
+  }
+  /* Båt: ägs och aktiveras genom att man äger den (inget separat utrusta). */
+  return `<div class="idname">${BOAT.name}</div><div class="ds">${BOAT.description}</div>
+    <div class="idstats"><div class="idrow"><span>Låser upp</span><span>Vertikalfiske, Trolling</span></div></div>
+    <button class="idequip done2" disabled>✓ Ägd</button>`;
+}
+
+/* Fiskeväska: tryckbara föremål grupperade per typ + detaljvy där man utrustar. */
 function renderInventory() {
   const wrap = getEl('invlist');
   if (!wrap) return;
-  let html = '';
+  normalizeBagSelection();
 
-  /* Förbrukningsbara beten — visa alla (även 0) så spelaren ser vad som är slut. */
-  const consumables = BAIT_ORDER.filter(id => BAITS[id].consumable);
-  html += '<h4 class="invh">Mete-bete (förbrukas)</h4><div class="invsec">';
-  html += consumables.map(id => {
-    const n = getBaitCount(id);
-    const active = gameState.bait.mete === id;
-    return `<div class="invrow ${n === 0 ? 'empty' : ''}">
-      <span class="invname">${BAITS[id].name}${active ? ' <span class="invtag">aktivt</span>' : ''}</span>
-      <span class="invcount">×${n}</span></div>`;
-  }).join('');
-  html += '</div>';
+  /* Spön (ägda). */
+  const rods = RODS.filter(r => gameState.ownedRods.has(r.id)).map(r => ({
+    kind: 'rod', id: r.id, name: r.name,
+    active: gameState.rod === r.id,
+    meta: gameState.rod === r.id ? '✓ Utrustad' : Math.round(r.castMax * 100) + '%',
+  }));
 
-  /* Ägda eviga beten (ej förbrukningsbara). */
-  const eternal = BAIT_ORDER.filter(id => !BAITS[id].consumable && gameState.ownedBaits.has(id));
-  if (eternal.length) {
-    html += '<h4 class="invh">Konstgjort bete (ägs)</h4><div class="invsec">';
-    html += eternal.map(id => `<div class="invrow">
-      <span class="invname">${BAITS[id].name} <span class="invsub">${METHODS[BAITS[id].method].name}</span></span>
-      <span class="invcount">✓</span></div>`).join('');
-    html += '</div>';
+  /* Mete-bete (förbrukningsbart) — ägda, med antal. */
+  const meteBaits = BAIT_ORDER.filter(id => BAITS[id].consumable && gameState.ownedBaits.has(id)).map(id => ({
+    kind: 'bait', id, name: BAITS[id].name,
+    active: isBaitActive(id),
+    meta: '×' + getBaitCount(id) + (isBaitActive(id) ? ' · ✓' : ''),
+  }));
+
+  /* Konstgjort/evigt bete — ägda, utan antal. */
+  const eternalBaits = BAIT_ORDER.filter(id => !BAITS[id].consumable && gameState.ownedBaits.has(id)).map(id => ({
+    kind: 'bait', id, name: BAITS[id].name,
+    active: isBaitActive(id),
+    meta: isBaitActive(id) ? '✓ Aktivt' : METHODS[BAITS[id].method].name,
+  }));
+
+  /* Båt (om ägd). */
+  const boat = gameState.ownedBoat ? [{ kind: 'boat', id: BOAT.id, name: BOAT.name, active: true, meta: '✓ Ägd' }] : [];
+
+  wrap.innerHTML =
+    buildBagGroup('Spön', rods) +
+    buildBagGroup('Mete-bete', meteBaits) +
+    buildBagGroup('Konstgjort bete', eternalBaits) +
+    buildBagGroup('Båt', boat) +
+    `<div class="invdetail">${buildBagDetail()}</div>`;
+
+  bindBagHandlers();
+}
+
+/* Klick på föremål (välj) och på utrusta-knappen i detaljvyn. */
+function bindBagHandlers() {
+  const wrap = getEl('invlist');
+  wrap.querySelectorAll('.invitem').forEach(btn => {
+    btn.onclick = () => {
+      gameState.bagSel = { kind: btn.dataset.kind, id: btn.dataset.id };
+      renderInventory();
+    };
+  });
+  const eq = wrap.querySelector('.idequip[data-eq]');
+  if (eq) eq.onclick = () => equipFromBag(eq.dataset.eq, eq.dataset.id);
+}
+
+/* Utrustar gear från väskan. Spö → aktivt spö (metod synkas). Bete → aktivt bete
+   för sin metod. Respekterar samma spö/metod-logik som tidigare. */
+function equipFromBag(kind, id) {
+  if (kind === 'rod') {
+    gameState.rod = id;
+    syncMethodToEquippedRod();                /* byt metod om spöt inte stödjer nuvarande */
+    renderSetupChips();
+    renderOddsBar();
+    if (sceneState.mode === 'ready') resetToReady();
+    showToast(getRodById(id).name + ' utrustad');
+  } else if (kind === 'bait') {
+    const bait = BAITS[id];
+    gameState.bait[bait.method] = id;
+    if (gameState.method === bait.method) { renderSetupChips(); renderOddsBar(); }
+    showToast(bait.name + ' aktivt bete');
   }
-
-  /* Ägda spön. */
-  html += '<h4 class="invh">Spön (ägs)</h4><div class="invsec">';
-  html += RODS.filter(r => gameState.ownedRods.has(r.id)).map(r => `<div class="invrow">
-    <span class="invname">${r.name}${gameState.rod === r.id ? ' <span class="invtag">utrustat</span>' : ''}</span>
-    <span class="invcount">✓</span></div>`).join('');
-  html += '</div>';
-
-  /* Båt om ägd. */
-  if (gameState.ownedBoat) {
-    html += '<div class="invsec"><div class="invrow"><span class="invname">' + BOAT.name + '</span><span class="invcount">✓</span></div></div>';
-  }
-
-  wrap.innerHTML = html;
+  renderInventory();
 }
 
 function showReelPad(visible) { getEl('reelpad').classList.toggle('on', visible); }
@@ -2257,13 +2363,16 @@ function renderShopHero() {
   getEl('hero').classList.toggle('water', gameState.view === 'water');
 }
 
-function buildShopCtaHtml(price, currencyKind, owned, equipped) {
+/* Köp-CTA. allowEquip=true endast för kosmetiska skins (sätts på i shoppen);
+   spön/båt utrustas i väskan, så där visas bara "✓ Ägd" när varan ägs. */
+function buildShopCtaHtml(price, currencyKind, owned, equipped, allowEquip) {
   const priceHtml = price === 0
     ? '<span class="sprice free">Gratis</span>'
     : `<span class="sprice ${currencyKind}">${currencyKind === 'kr' ? price.toLocaleString('sv-SE') + ' FG' : '◈ ' + price}</span>`;
   let btn;
-  if (equipped) btn = '<button class="sbuy equipped" disabled>✓ Utrustad</button>';
-  else if (owned) btn = '<button class="sbuy equip" id="sb" data-a="equip">Utrusta</button>';
+  if (allowEquip && equipped) btn = '<button class="sbuy equipped" disabled>✓ Påsatt</button>';
+  else if (allowEquip && owned) btn = '<button class="sbuy equip" id="sb" data-a="equip">Sätt på</button>';
+  else if (owned) btn = '<button class="sbuy equipped" disabled>✓ Ägd</button>';
   else {
     const canAfford = currencyKind === 'kr' ? gameState.kronor >= price : gameState.pearls >= price;
     btn = canAfford
@@ -2279,16 +2388,15 @@ function buildLockedCtaHtml(level) {
 }
 
 /* CTA för bete (kronor). Förbrukningsbart mete-bete köps i antal (mängdväljare);
-   eviga beten köps en gång. Utrusta-knappen heter "Välj". */
-function buildBaitCtaHtml(bait, owned, equipped) {
-  if (bait.consumable) return buildConsumableBaitCtaHtml(bait, equipped);
+   eviga beten köps en gång. Inget val/utrusta här — det sker i väskan. */
+function buildBaitCtaHtml(bait, owned) {
+  if (bait.consumable) return buildConsumableBaitCtaHtml(bait);
   const price = BAIT_PRICES[bait.id];
   const priceHtml = price === 0
     ? '<span class="sprice free">Gratis</span>'
     : `<span class="sprice kr">${price.toLocaleString('sv-SE')} FG</span>`;
   let btn;
-  if (equipped) btn = '<button class="sbuy equipped" disabled>✓ Vald</button>';
-  else if (owned) btn = '<button class="sbuy equip" id="sb" data-a="equip">Välj</button>';
+  if (owned) btn = '<button class="sbuy equipped" disabled>✓ Ägd</button>';
   else btn = gameState.kronor >= price
     ? '<button class="sbuy primary" id="sb" data-a="buy">Köp</button>'
     : '<button class="sbuy cant" disabled>För lite FG</button>';
@@ -2296,8 +2404,9 @@ function buildBaitCtaHtml(bait, owned, equipped) {
 }
 
 /* CTA för förbrukningsbart mete-bete: mängdväljare (− antal +), totalpris och köp.
-   Antalet ändras i steg om BAIT_BUY_STEP, golv vid BAIT_BUY_MIN. */
-function buildConsumableBaitCtaHtml(bait, equipped) {
+   Antalet ändras i steg om BAIT_BUY_STEP, golv vid BAIT_BUY_MIN. KÖP-logiken är
+   oförändrad — inget "välj som bete" här (det görs i väskan). */
+function buildConsumableBaitCtaHtml(bait) {
   const qty = gameState.baitBuyQty;
   const total = qty * BAIT_UNIT_PRICE;
   const canAfford = gameState.kronor >= total;
@@ -2305,10 +2414,6 @@ function buildConsumableBaitCtaHtml(bait, equipped) {
   const buyBtn = canAfford
     ? `<button class="sbuy primary" data-a="buyqty">Köp ${qty} st</button>`
     : '<button class="sbuy cant" disabled>För lite FG</button>';
-  /* Sekundär rad: välj som aktivt bete (om man har antal och det inte redan är valt). */
-  let equipRow = '';
-  if (equipped) equipRow = '<div class="scta"><span class="sprice free">Aktivt bete</span><button class="sbuy equipped" disabled>✓ Vald</button></div>';
-  else if (getBaitCount(bait.id) > 0) equipRow = '<div class="scta"><span class="sprice"></span><button class="sbuy equip" data-a="equip">Välj som bete</button></div>';
   return `
     <div class="qstep">
       <button class="qbtn" data-a="qminus" ${atMin ? 'disabled' : ''}>−</button>
@@ -2318,8 +2423,7 @@ function buildConsumableBaitCtaHtml(bait, equipped) {
     <div class="scta">
       <span class="sprice kr">${total.toLocaleString('sv-SE')} FG</span>
       ${buyBtn}
-    </div>
-    ${equipRow}`;
+    </div>`;
 }
 
 function renderShopInfo() {
@@ -2342,15 +2446,15 @@ function renderShopInfo() {
       ${unlocked ? buildShopCtaHtml(rod.price, 'kr', owned, equipped) : buildLockedCtaHtml(rod.unlockLevel)}`;
   } else if (gameState.shopCategory === 'baits') {
     const bait = BAITS[gameState.selBait];
-    const owned = gameState.ownedBaits.has(bait.id);
-    const equipped = gameState.bait[bait.method] === bait.id;
+    /* Förbrukningsbart räknas som ägt vid antal > 0; evigt via ownedBaits. */
+    const owned = bait.consumable ? getBaitCount(bait.id) > 0 : gameState.ownedBaits.has(bait.id);
     const methodOwned = ownsRodForMethod(bait.method);
     const capPct = Math.round(BAIT_BIAS_CAP * 100);
     info.innerHTML = `
       <div class="nm">${bait.name}</div>
       <div class="ds">För ${METHODS[bait.method].name}.</div>
       <div class="cnote"><b>Mjuk bias.</b> Bete förskjuter <b>vilken art</b> du får — takat vid ±${capPct}%. Det ändrar aldrig hur ofta det nappar.</div>
-      ${methodOwned ? buildBaitCtaHtml(bait, owned, equipped)
+      ${methodOwned ? buildBaitCtaHtml(bait, owned)
         : `<div class="scta"><span class="sprice">Låst</span><button class="sbuy cant" disabled>Kräver ${methodRodName(bait.method)}</button></div>`}`;
   } else if (gameState.shopCategory === 'boat') {
     const owned = gameState.ownedBoat;
@@ -2372,7 +2476,7 @@ function renderShopInfo() {
       <div class="nm">${skin.name}</div>
       <div class="ds">${skin.description}</div>
       <div class="cnote"><b>Endast utseende.</b> Skins köps med pärlor och ger ingen fördel i fisket.</div>
-      ${buildShopCtaHtml(skin.price, 'pe', owned, equipped)}`;
+      ${buildShopCtaHtml(skin.price, 'pe', owned, equipped, true)}`;
   }
   bindShopActionButton();
 }
@@ -2687,7 +2791,7 @@ initGame();
       ownedBaits: new Set(['mask']),
       baitCounts: { ...BAIT_START_COUNTS },
       bait: { mete: 'mask', spinn: null, vert: null, troll: null },
-      shopCategory: 'rods', selRod: 'start', selSkin: 'standard', selBait: 'mask', baitBuyQty: BAIT_BUY_MIN,
+      shopCategory: 'rods', selRod: 'start', selSkin: 'standard', selBait: 'mask', baitBuyQty: BAIT_BUY_MIN, bagSel: null,
       view: 'studio',
     });
     SPECIES_ORDER.forEach(id => {
