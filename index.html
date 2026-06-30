@@ -297,6 +297,8 @@ const BAIT_CONSUME_PER_CATCH = 1;             /* antal bete som dras per LANDAD 
 const BAIT_UNIT_PRICE = 1;   /* FG per styck för förbrukningsbart mete-bete (10 st = 10 FG) */
 const BAIT_BUY_STEP   = 10;  /* köpsteg i mängdväljaren (10 → 20 → 30 ...) */
 const BAIT_BUY_MIN    = 10;  /* minsta köp / golv för mängdväljaren */
+/* BETE — varna spelaren i förväg när aktivt mete-bete når detta antal kvar (0 = hård spärr). */
+const LOW_BAIT_WARNING_THRESHOLD = 5;  /* visa "snart slut"-varning vid detta antal kvar */
 /* BETE — engångspris i FG för EVIGA (ej förbrukningsbara) beten. Förbrukningsbara
    mete-beten prissätts per styck via BAIT_UNIT_PRICE ovan, inte här. */
 const BAIT_PRICES = { mask: 0, maggot: 40, majs: 60, jigg: 0, spinnare: 120, wobbler: 200, vertikaljigg: 0, pirk: 160, trollingwobbler: 0 };
@@ -691,11 +693,13 @@ function hasUsableMeteBait() {
   const id = gameState.bait.mete;
   return id != null && isBaitAvailable(id);
 }
-/* Drar bete vid LANDAD mete-fångst (bara mete, bara förbrukningsbart bete). */
+/* Drar bete vid LANDAD mete-fångst (bara mete, bara förbrukningsbart bete).
+   Flaggar en "snart slut"-varning exakt när antalet når varningströskeln. */
 function consumeActiveMeteBait() {
   const id = gameState.bait.mete;
   if (id && BAITS[id].consumable) {
     gameState.baitCounts[id] = Math.max(0, getBaitCount(id) - BAIT_CONSUME_PER_CATCH);
+    if (getBaitCount(id) === LOW_BAIT_WARNING_THRESHOLD) lowBaitWarningId = id;
   }
 }
 /* Mjuk artbias från betet, klampad mot BAIT_BIAS_CAP så det aldrig blir avgörande. */
@@ -1561,6 +1565,31 @@ function renderOddsBar() {
   getEl('legtxt').textContent = SPOTS[gameState.spot].name + ' · ' + METHODS[gameState.method].name + baitName + ' · ' + TIMES[gameState.time].name;
 }
 
+/* Sätts av betesförbrukningen när tröskeln nås; visas när fångstrutan stängts. */
+let lowBaitWarningId = null;
+
+/* "Snart slut på bete"-ruta: mjuk förvarning vid LOW_BAIT_WARNING_THRESHOLD kvar.
+   Spärrar inte fisket (det gör 0-spärren), utan tipsar om att fylla på i shoppen. */
+function showLowBaitWarning(baitId) {
+  const modal = getEl('modal');
+  const card = getEl('mcard');
+  const name = BAITS[baitId].name;
+  const count = getBaitCount(baitId);
+  card.innerHTML = `
+    <p class="sub">Snart slut på bete</p>
+    <h2 class="lvlh">${name} ×${count}</h2>
+    <p style="font-size:13px;color:var(--muted);line-height:1.6;margin:6px 0 4px">
+      Det börjar ta slut. Tips: spara och sälj fisk för FG så har du råd att köpa mer bete i shoppen innan det tar helt slut.
+    </p>
+    <div class="mbtns">
+      <button class="mb primary" id="lbShop">Till shoppen</button>
+      <button class="mb" id="lbClose">Fortsätt fiska</button>
+    </div>`;
+  modal.classList.add('on');
+  getEl('lbClose').onclick = () => modal.classList.remove('on');
+  getEl('lbShop').onclick = () => { modal.classList.remove('on'); switchTab('shop'); };
+}
+
 /* "Slut på bete"-ruta: visas när aktivt mete-bete är 0. Erbjuder byte till annat
    mete-bete man har antal av, samt en väg till shoppen. */
 function showOutOfBaitModal() {
@@ -1706,6 +1735,8 @@ function showCatchResultModal(landed, reason) {
     renderShelf();
     renderShopHero();
     if (msg) showToast(msg);
+    /* Mjuk förvarning om betet just nådde tröskeln — visas efter fångstrutan. */
+    if (lowBaitWarningId) { const id = lowBaitWarningId; lowBaitWarningId = null; showLowBaitWarning(id); }
   };
   if (!landed) {
     getEl('ag').onclick = () => closeModal();
