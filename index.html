@@ -279,12 +279,16 @@ const SIZE_LEVEL_TO_BRA     = 0.70; /* hur stor del av det bortflyttade som går
    ############################################################################ */
 
 /* SPÖN — level då spöt SYNS och går att köpa i shoppen.
-   bettre_met = 5 så att Bättre metspö låses upp ungefär när spelaren har råd (synk med XP/ekonomi). */
-const ROD_UNLOCK_LEVELS = { start: 1, bettre_met: 5, spinn: 3, vertikal: 15, trolling: 15 };
+   bettre_met = 3 så att Bättre metspö blir ett tidigt, nåbart uppgraderingsmål. */
+const ROD_UNLOCK_LEVELS = { start: 1, bettre_met: 3, spinn: 3, vertikal: 15, trolling: 15 };
 /* SPÖN — pris i kronor (startspöt ingår gratis i startkitet). */
 const ROD_PRICES        = { start: 0, bettre_met: 150, spinn: 400, vertikal: 1200, trolling: 1600 };
 /* SPÖN — egen maxkastlängd, normaliserad 0..1 (startspöt kortast, båt-spöna längst). */
 const ROD_CAST_MAX      = { start: 0.55, bettre_met: 0.70, spinn: 0.85, vertikal: 1.00, trolling: 1.00 };
+/* SPÖN — liten, FAST storleksbonus per spö: skjuter storleksdragningen en aning mot
+   'bra'/'stor' (samma riktning som uppläggskvaliteten, fast liten och oberoende av level).
+   0 = ingen bonus. Håll värdena små så bonusen känns men aldrig dominerar. */
+const ROD_SIZE_BONUS    = { start: 0, bettre_met: 0.08, spinn: 0, vertikal: 0, trolling: 0 };
 
 /* BETE — mjukt tak för hur mycket bete får påverka artfördelningen (aldrig avgörande). */
 const BAIT_BIAS_CAP = 0.10;        /* ±10 % max förskjutning av artvikt */
@@ -504,11 +508,11 @@ const SPOTS = {
    unlockLevel/price/castMax läses från platshållarna högst upp i KONFIGURATION.
    len/taper/guides/blank/metal/rough används endast av 3D-modellen i shoppen. */
 const RODS = [
-  { id: 'start',      name: 'Startspö',      description: 'Ingår i startkitet. Kortast kast, endast mete.', methods: ['mete'],  requiresBoat: false, unlockLevel: ROD_UNLOCK_LEVELS.start,      price: ROD_PRICES.start,      castMax: ROD_CAST_MAX.start,      len: 3.6, taper: 0.085, guides: 4, blank: 0x6e5236, metal: 0.15, rough: 0.85 },
-  { id: 'bettre_met', name: 'Bättre metspö', description: 'Mete med något längre kast.',                    methods: ['mete'],  requiresBoat: false, unlockLevel: ROD_UNLOCK_LEVELS.bettre_met, price: ROD_PRICES.bettre_met, castMax: ROD_CAST_MAX.bettre_met, len: 3.9, taper: 0.07,  guides: 5, blank: 0x2a3a44, metal: 0.35, rough: 0.55 },
-  { id: 'spinn',      name: 'Spinnspö',      description: 'Låser upp spinnfiske. Längre kast.',            methods: ['spinn'], requiresBoat: false, unlockLevel: ROD_UNLOCK_LEVELS.spinn,      price: ROD_PRICES.spinn,      castMax: ROD_CAST_MAX.spinn,      len: 4.2, taper: 0.055, guides: 6, blank: 0x14323d, metal: 0.5,  rough: 0.4 },
-  { id: 'vertikal',   name: 'Vertikalspö',   description: 'Vertikalfiske från båt.',                       methods: ['vert'],  requiresBoat: true,  unlockLevel: ROD_UNLOCK_LEVELS.vertikal,   price: ROD_PRICES.vertikal,   castMax: ROD_CAST_MAX.vertikal,   len: 2.2, taper: 0.05,  guides: 6, blank: 0x101820, metal: 0.6,  rough: 0.35 },
-  { id: 'trolling',   name: 'Trollingspö',   description: 'Trolling från båt. Längst räckvidd.',           methods: ['troll'], requiresBoat: true,  unlockLevel: ROD_UNLOCK_LEVELS.trolling,   price: ROD_PRICES.trolling,   castMax: ROD_CAST_MAX.trolling,   len: 4.6, taper: 0.05,  guides: 7, blank: 0x1a1410, metal: 0.7,  rough: 0.3 },
+  { id: 'start',      name: 'Startspö',      description: 'Ingår i startkitet. Kortast kast, endast mete.', methods: ['mete'],  requiresBoat: false, unlockLevel: ROD_UNLOCK_LEVELS.start,      price: ROD_PRICES.start,      castMax: ROD_CAST_MAX.start,      sizeBonus: ROD_SIZE_BONUS.start,      len: 3.6, taper: 0.085, guides: 4, blank: 0x6e5236, metal: 0.15, rough: 0.85 },
+  { id: 'bettre_met', name: 'Bättre metspö', description: 'Mete med något längre kast.',                    methods: ['mete'],  requiresBoat: false, unlockLevel: ROD_UNLOCK_LEVELS.bettre_met, price: ROD_PRICES.bettre_met, castMax: ROD_CAST_MAX.bettre_met, sizeBonus: ROD_SIZE_BONUS.bettre_met, len: 3.9, taper: 0.07,  guides: 5, blank: 0x2a3a44, metal: 0.35, rough: 0.55 },
+  { id: 'spinn',      name: 'Spinnspö',      description: 'Låser upp spinnfiske. Längre kast.',            methods: ['spinn'], requiresBoat: false, unlockLevel: ROD_UNLOCK_LEVELS.spinn,      price: ROD_PRICES.spinn,      castMax: ROD_CAST_MAX.spinn,      sizeBonus: ROD_SIZE_BONUS.spinn,      len: 4.2, taper: 0.055, guides: 6, blank: 0x14323d, metal: 0.5,  rough: 0.4 },
+  { id: 'vertikal',   name: 'Vertikalspö',   description: 'Vertikalfiske från båt.',                       methods: ['vert'],  requiresBoat: true,  unlockLevel: ROD_UNLOCK_LEVELS.vertikal,   price: ROD_PRICES.vertikal,   castMax: ROD_CAST_MAX.vertikal,   sizeBonus: ROD_SIZE_BONUS.vertikal,   len: 2.2, taper: 0.05,  guides: 6, blank: 0x101820, metal: 0.6,  rough: 0.35 },
+  { id: 'trolling',   name: 'Trollingspö',   description: 'Trolling från båt. Längst räckvidd.',           methods: ['troll'], requiresBoat: true,  unlockLevel: ROD_UNLOCK_LEVELS.trolling,   price: ROD_PRICES.trolling,   castMax: ROD_CAST_MAX.trolling,   sizeBonus: ROD_SIZE_BONUS.trolling,   len: 4.6, taper: 0.05,  guides: 7, blank: 0x1a1410, metal: 0.7,  rough: 0.3 },
 ];
 
 /* BETE per metod. methodDefault = metodens gratisbete (fås när spöt köps).
@@ -833,6 +837,13 @@ function pickSpeciesAndSize() {
   litenWeight -= moved;
   braWeight  += moved * SIZE_LEVEL_TO_BRA;
   storWeight += moved * (1 - SIZE_LEVEL_TO_BRA);
+  /* Spö-bonus: liten, FAST förskjutning av 'liten' upp mot 'bra'/'stor' (ROD_SIZE_BONUS).
+     Oberoende av level, samma riktning som ovan. Påverkar bara storlek, ej napp/artval. */
+  const rodSizeBonus = getRodById(gameState.rod).sizeBonus || 0;
+  const rodMoved = litenWeight * rodSizeBonus;
+  litenWeight -= rodMoved;
+  braWeight  += rodMoved * SIZE_LEVEL_TO_BRA;
+  storWeight += rodMoved * (1 - SIZE_LEVEL_TO_BRA);
   const sizeRoll = Math.random();
   const sizeClass = sizeRoll < storWeight ? 'stor' : sizeRoll < storWeight + braWeight ? 'bra' : 'liten';
   let [lo, hi] = sp.weightClasses[sizeClass];
