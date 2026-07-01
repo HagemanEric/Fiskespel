@@ -47,6 +47,27 @@ These pillars guide the Godot build. The prototype validates simplified versions
 
 ---
 
+## Visuell och auditiv målbild (Godot-fas)
+
+> **Detta är produktionsgrafik och ljuddesign som byggs i Godot-fasen**, efter att kärnloopen (kasta, fånga, fight, ekonomi) är validerad och balanserad i prototypen. Prototypens (`index.html`) nuvarande grafik och ljud är **medvetet basic** — Canvas 2D-scen och enkla platshållare — och ska **inte** förväxlas med målbilden nedan.
+
+### Grafik
+
+- **Art-korrekta 3D-fiskar.** Varje fisk ska vara 3D-realistisk och art-korrekt: rätt fenor, färger, ränder, mönster och proportioner för varje art. Exempel: abborre med sina tydliga mörka tvärränder, taggig ryggfena och röd-orange bukfenor; gädda med långsmal kropp och ankliknande nos. Inte stiliserade eller handmålade platshållare som i prototypen.
+- **Levande vatten.** Realistiskt vatten med vågor, rörelse, reflektioner och djup — inte en statisk bakgrundsbild. Ytan och ljuset ska reagera på tid på dygnet och väder.
+- **Platstrogen miljö.** Miljön ska spegla den verkliga platsen. En sjö inne i en stad (t.ex. Munksjön i Jönköping) ska se ut och kännas som just en stadsnära sjö — bebyggelse, kajkanter och stadssiluett i bakgrunden — medan ett naturnära vatten ska kännas orört och grönt.
+
+### Ljud
+
+- **Platsspecifik ljudbild.** Ljudmiljön ska matcha platsen: fågelsång, vind i vass och löv vid naturnära vatten; stadspuls (trafik, röster, avlägset brus) vid en sjö inne i staden.
+- **Fiskekopplat ljud.** Ljud knutna till själva fisket — kast, plask när betet träffar vattnet, linspel och rusningar under fighten, håvning vid landning — för känsla och tydlig feedback.
+
+### Avgränsning
+
+Denna målbild gäller **produktversionen i Godot 4** och styr ingen del av HTML-prototypen. Prototypen ska förbli enkel och fokuserad på balans och känsla; investeringar i realistisk grafik och ljud görs först i Godot-fasen (se fas 6 i [DEVELOPMENT_ROADMAP.md](./DEVELOPMENT_ROADMAP.md)).
+
+---
+
 ## Core Gameplay Loop
 
 The prototype implements the loop that Godot must preserve:
@@ -190,4 +211,4 @@ See [DEVELOPMENT_ROADMAP.md](./DEVELOPMENT_ROADMAP.md) for full detail.
 
 ---
 
-*Last updated: June 2025 — Godot as production target; HTML prototype as balance test bed.*
+*Last updated: July 2026 — added visual & audio target (Godot phase); Godot as production target; HTML prototype as balance test bed.*
